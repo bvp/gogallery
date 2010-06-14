@@ -3,8 +3,8 @@ package main
 import (
 	"log"
 	"os"
-	"sort"
-	"path"
+//	"sort"
+//	"path"
 	"fmt"
 	"flag"
 	"http"
@@ -48,7 +48,7 @@ type page struct {
 
 // http 
 
-const lenPath = len("/tag/")
+const lenTagPrefix = len("/tag/")
 var titleValidator = regexp.MustCompile("^[a-zA-Z0-9]+$")
 var templates = make(map[string]*template.Template)
 
@@ -59,23 +59,9 @@ func renderTemplate(c *http.Conn, tmpl string, p *page) {
 	}
 }
 
-func buildPage(tag string) (*page, os.Error) {
-	currentDir, err := os.Open(picsdir, os.O_RDONLY, 0644)
-	if err != nil {
-		os.Exit(1)
-	}
-	names, err := currentDir.Readdirnames(-1)
-	if err != nil {
-		os.Exit(1)
-	}
-	currentDir.Close()		
-	sort.SortStrings(names)
-
-	for _,v := range names {
-		path := "'" + path.Join(picsdir, v) + "'"
-		errchk(db.Exec("INSERT INTO tags VALUES (" + path + ", 'all')"))
-	}	
-	stmt, err := db.Prepare("SELECT file FROM tags")
+func tagPage(tag string) (*page, os.Error) {
+	stmt, err := db.Prepare(
+		"SELECT file FROM tags where tag = '" + tag + "'")
 	errchk(err)
 	
 	var t string
@@ -92,8 +78,13 @@ func buildPage(tag string) (*page, os.Error) {
 	return &page{title: title, pics: pics}, nil
 }
 
-func tagHandler(c *http.Conn, r *http.Request, tag string) {
-	p, err := buildPage(tag)
+func tagHandler(c *http.Conn, r *http.Request, urlpath string) {
+	tag := urlpath[lenTagPrefix:]
+	if !titleValidator.MatchString(tag) {
+		http.NotFound(c, r)
+		return
+	}
+	p, err := tagPage(tag)
 	if err != nil {
 		http.Error(c, err.String(), http.StatusInternalServerError)
 		return
@@ -102,17 +93,13 @@ func tagHandler(c *http.Conn, r *http.Request, tag string) {
 }
 
 
-func fileHandler(c *http.Conn, r *http.Request, title string) {
+func serveFile(c *http.Conn, r *http.Request) {
 	fileServer.ServeHTTP(c, r);
 }
 
 func makeHandler(fn func(*http.Conn, *http.Request, string)) http.HandlerFunc {
 	return func(c *http.Conn, r *http.Request) {
-		title := r.URL.Path[lenPath:]
-		if !titleValidator.MatchString(title) {
-			http.NotFound(c, r)
-			return
-		}
+		title := r.URL.Path
 		fn(c, r, title)
 	}
 }
@@ -122,8 +109,24 @@ func initDb() {
 	var err os.Error
 	db, err = sqlite.Open(dbfile)
 	errchk(err)
+	/*
 	db.Exec("DROP TABLE tags")
 	errchk(db.Exec("CREATE TABLE tags (file text, tag text)"))
+	currentDir, err := os.Open(picsdir, os.O_RDONLY, 0644)
+	if err != nil {
+		os.Exit(1)
+	}
+	names, err := currentDir.Readdirnames(-1)
+	if err != nil {
+		os.Exit(1)
+	}
+	currentDir.Close()		
+	sort.SortStrings(names)
+	for _,v := range names {
+		path := "'" + path.Join(picsdir, v) + "'"
+		errchk(db.Exec("INSERT INTO tags VALUES (" + path + ", 'all')"))
+	}
+	*/
 }
 
 func errchk(err os.Error) {
@@ -148,6 +151,6 @@ func usage() {
 
 func main() {
 	http.HandleFunc("/tag/", makeHandler(tagHandler))
-	http.HandleFunc("/", makeHandler(fileHandler))
+	http.HandleFunc("/", http.HandlerFunc(serveFile))
 	http.ListenAndServe(":8080", nil)
 }
