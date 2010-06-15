@@ -3,8 +3,8 @@ package main
 import (
 	"log"
 	"os"
-//	"sort"
-//	"path"
+	"sort"
+	"path"
 	"fmt"
 	"flag"
 	"http"
@@ -14,13 +14,19 @@ import (
 	sqlite "gosqlite.googlecode.com/hg/sqlite"
 )
 
-var picsdir = "pics/"
-var fileServer = http.FileServer(".", "")
-var db *sqlite.Conn
-var dbfile = "foo.db"
-
-const maxDirDepth = 4
+const maxDirDepth = 24
 const templDir = "tmpl/"
+
+var (
+	fileServer = http.FileServer(".", "")
+	db *sqlite.Conn
+
+	// command flags 
+    snapsize   = flag.Int("snapsize", 0, "height of the thumbnail pictures")
+	picsdir = flag.String("picsdir", "pics/", "Root dir for all the pics (defaults to ./pics/)")
+    dbfile   = flag.String("dbfile", "gallery.db", "File to store the db (defaults to ./gallery.db)")
+    initdb    = flag.Bool("init", false, "clean out the db file and start from scratch")
+)
 
 type lines []string
 
@@ -43,7 +49,7 @@ func (p *lines) Write(line string) (n int, err os.Error) {
 
 type page struct {
 	title	string
-	pics	lines
+	body	lines
 }
 
 // http 
@@ -65,17 +71,17 @@ func tagPage(tag string) (*page, os.Error) {
 	errchk(err)
 	
 	var t string
-	var pics lines
+	var body lines
 	errchk(stmt.Exec())
 	for stmt.Next() {
 		errchk(stmt.Scan(&t))
-		pics.Write(t)
+		body.Write(t)
 	}
 	title := tag
 	
 	stmt.Finalize()
 
-	return &page{title: title, pics: pics}, nil
+	return &page{title: title, body: body}, nil
 }
 
 func tagHandler(c *http.Conn, r *http.Request, urlpath string) {
@@ -92,6 +98,23 @@ func tagHandler(c *http.Conn, r *http.Request, urlpath string) {
 	renderTemplate(c, "tag", p)
 }
 
+func picHandler(c *http.Conn, r *http.Request, urlpath string) {
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(c, err.String(), http.StatusInternalServerError)
+		return
+	}
+	for k, v := range (*r).Form {  
+    	print(k + "\n");
+    	for _, vv := range v {
+    		print("	" + vv + "\n")
+    	}
+	}	
+	var p page
+	p.title = urlpath[len("/pic/"):]
+	p.body = nil
+	renderTemplate(c, "pic", &p)
+}
 
 func serveFile(c *http.Conn, r *http.Request) {
 	fileServer.ServeHTTP(c, r);
@@ -107,12 +130,11 @@ func makeHandler(fn func(*http.Conn, *http.Request, string)) http.HandlerFunc {
 // sqlite 
 func initDb() {
 	var err os.Error
-	db, err = sqlite.Open(dbfile)
+	db, err = sqlite.Open(*dbfile)
 	errchk(err)
-	/*
 	db.Exec("DROP TABLE tags")
 	errchk(db.Exec("CREATE TABLE tags (file text, tag text)"))
-	currentDir, err := os.Open(picsdir, os.O_RDONLY, 0644)
+	currentDir, err := os.Open(*picsdir, os.O_RDONLY, 0644)
 	if err != nil {
 		os.Exit(1)
 	}
@@ -123,10 +145,10 @@ func initDb() {
 	currentDir.Close()		
 	sort.SortStrings(names)
 	for _,v := range names {
-		path := "'" + path.Join(picsdir, v) + "'"
+		path := "'" + path.Join(*picsdir, v) + "'"
 		errchk(db.Exec("INSERT INTO tags VALUES (" + path + ", 'all')"))
 	}
-	*/
+	db.Close();
 }
 
 func errchk(err os.Error) {
@@ -144,13 +166,24 @@ func init() {
 
 func usage() {
 	fmt.Fprintf(os.Stderr,
-		"usage: gogallery -http=:6060\n");
+		"usage: gogallery \n");
 	flag.PrintDefaults();
 	os.Exit(2);
 }
 
 func main() {
+	flag.Usage = usage
+	flag.Parse()
+
+	if *initdb {
+		initDb()
+	}
+	var err os.Error
+	db, err = sqlite.Open(*dbfile)
+	errchk(err)
+
 	http.HandleFunc("/tag/", makeHandler(tagHandler))
+	http.HandleFunc("/pic/", makeHandler(picHandler))
 	http.HandleFunc("/", http.HandlerFunc(serveFile))
 	http.ListenAndServe(":8080", nil)
 }
