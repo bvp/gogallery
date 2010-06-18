@@ -2,11 +2,7 @@ include $(GOROOT)/src/Make.$(GOARCH)
 
 TARG=gogallery
 
-$(TARG): gogallery.go
-	$(GC) gogallery.go
-	$(LD) -o $(TARG) gogallery.$O
+GOFILES=\
+	gogallery.go
 
-all: $(TARG)
-	
-clean:
-	rm *.$O $(TARG)
+include $(GOROOT)/src/Make.cmd
