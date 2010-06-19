@@ -1,27 +1,34 @@
 
 <div>
 <center>
-<a href="http://localhost:8080/random">
-<img src="http://localhost:8080/{title}" alt={title} />
+<table>
+<tr>
+<td>
+<a href="http://{host}/prev"> prev </a>
+</td>
+<td>
+<a href="http://{host}{tags}"> tags </a>
+</td>
+<td>
+<a href="http://{host}/next"> next </a>
+</td>
+</table>
+</center>
+</div>
+
+<div>
+<center>
+<a href="http://{host}/random">
+<img src="http://{host}/{title}" alt={title} />
 </a>
 </center>
 </div>
 
 <div> 
 <center>
-<table>
-<tr>
-<td>
-<a href="http://localhost:8080/prev"> prev </a>
-</td>
-<td>
-<form action="/pic/{title}" method="post"> 
+<form action="{pic}{title}" method="post"> 
 <input type="text" name="newtag"/> 
-<input type="submit" value="Add!"> 
-</td>
-<td>
-<a href="http://localhost:8080/next"> next </a>
-</td>
-</tr>
+<input type="submit" value="Tag!"> 
 </center>
 </form> 
+</div> 
