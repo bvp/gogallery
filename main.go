@@ -30,9 +30,10 @@ var (
 	picsdir = flag.String("picsdir", "pics/", "Root dir for all the pics")
 	thumbsize   = flag.String("thumbsize", "200x300", "size of the thumbnails")
 	tmpldir = flag.String("tmpldir", "tmpl/", "dir for the templates")
+	tagmode = flag.String("tagmode", "", "tag to use in standalone mode")
 )
 
-func scanDir(dirpath string) os.Error {
+func scanDir(dirpath string, tag string) os.Error {
 	currentDir, err := os.Open(dirpath, os.O_RDONLY, 0644)
 	if err != nil {
 		return err
@@ -56,7 +57,7 @@ func scanDir(dirpath string) os.Error {
 			return err
 		}
 		if fi.IsDirectory() && v != thumbsDir {
-			err = scanDir(childpath)
+			err = scanDir(childpath, tag)
 			if err != nil {
 				return err
 			}
@@ -67,7 +68,7 @@ func scanDir(dirpath string) os.Error {
 					return err
 				}
 				path := childpath[rootdirlen+1:]
-				insert(maxId+1, path, "all")
+				insert(maxId+1, path, tag)
 			}
 		}
 
@@ -147,7 +148,9 @@ func errchk(err os.Error) {
 
 func usage() {
 	fmt.Fprintf(os.Stderr,
-		"usage: gogallery \n");
+		"usage: gogallery -tag=sometag [-picsdir=dir] \n");
+	fmt.Fprintf(os.Stderr,
+		" \t gogallery \n");
 	flag.PrintDefaults();
 	os.Exit(2);
 }
@@ -158,6 +161,14 @@ func main() {
 	
 	miscInit()
 
+	// tagging mode
+	if len(*tagmode) != 0 {
+		errchk(scanDir(*picsdir, *tagmode))
+		db.Close()
+		return
+	}
+
+	// web server mode
 	http.HandleFunc(tagpattern, makeHandler(tagHandler))
 	http.HandleFunc(picpattern, makeHandler(picHandler))
 	http.HandleFunc(tagspattern, makeHandler(tagsHandler))

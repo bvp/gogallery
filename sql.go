@@ -18,7 +18,7 @@ func initDb() {
 	errchk(err)
 	db.Exec("drop table tags")
 	errchk(db.Exec("create table tags (id int, file text, tag text)"))
-	errchk(scanDir(*picsdir))
+	errchk(scanDir(*picsdir, "all"))
 }
 
 func insert(id int, path string, tag string) {
