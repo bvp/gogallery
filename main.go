@@ -25,12 +25,12 @@ var (
 	rootdirlen = len(rootdir)
 	// command flags 
 	dbfile   = flag.String("dbfile", "./gallery.db", "File to store the db")
-	host = flag.String("host", "localhost:8080", "hostname and port for this server")
+	host = flag.String("host", "localhost:8080", "hostname and port for this server that will appear in the urls")
+	hostlisten = flag.String("hostlisten", "", "hostname and port on which this server really listen (defaults to -host value)")
 	initdb    = flag.Bool("init", false, "clean out the db file and start from scratch")
 	picsdir = flag.String("picsdir", "pics/", "Root dir for all the pics")
 	thumbsize   = flag.String("thumbsize", "200x300", "size of the thumbnails")
 	tmpldir = flag.String("tmpldir", "tmpl/", "dir for the templates")
-	tagmode = flag.String("tagmode", "", "tag to use in standalone mode")
 )
 
 func scanDir(dirpath string, tag string) os.Error {
@@ -68,7 +68,7 @@ func scanDir(dirpath string, tag string) os.Error {
 					return err
 				}
 				path := childpath[rootdirlen+1:]
-				insert(maxId+1, path, tag)
+				insert(path, tag)
 			}
 		}
 
@@ -105,7 +105,7 @@ func mkThumb(filepath string) os.Error {
 	return nil
 }
 
-func miscInit() {
+func chkpicsdir() {
 	// fullpath for picsdir. must be within document root
 	*picsdir = path.Clean(*picsdir)
 	if (*picsdir)[0] != '/' {
@@ -116,27 +116,21 @@ func miscInit() {
 	if !pathValidator.MatchString(*picsdir) {
 		log.Exit("picsdir has to be a subdir of rootdir. (symlink ok)")
 	}
+}
 
+func chktmpl() {
 	// same drill for templates.
 	*tmpldir = path.Clean(*tmpldir)
 	if (*tmpldir)[0] != '/' {
 		cwd, _ := os.Getwd() 
 		*tmpldir = path.Join(cwd, *tmpldir)
 	}
+	pathValidator := regexp.MustCompile(rootdir + ".*")
 	if !pathValidator.MatchString(*tmpldir) {
 		log.Exit("tmpldir has to be a subdir of rootdir. (symlink ok)")
 	}
 	for _, tmpl := range []string{"tag", "pic", "tags"} {
 		templates[tmpl] = template.MustParseFile(path.Join(*tmpldir, tmpl+".html"), nil)
-	}
-
-	if *initdb {
-		initDb()
-	} else {
-		var err os.Error
-		db, err = sqlite.Open(*dbfile)
-		errchk(err)
-		setMaxId()
 	}
 }
 
@@ -147,10 +141,8 @@ func errchk(err os.Error) {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr,
-		"usage: gogallery -tag=sometag [-picsdir=dir] \n");
-	fmt.Fprintf(os.Stderr,
-		" \t gogallery \n");
+	fmt.Fprintf(os.Stderr, "usage:\t gogallery [-picsdir=\"dir\"] tag \n");
+	fmt.Fprintf(os.Stderr, "\t gogallery \n");
 	flag.PrintDefaults();
 	os.Exit(2);
 }
@@ -158,17 +150,33 @@ func usage() {
 func main() {
 	flag.Usage = usage
 	flag.Parse()
-	
-	miscInit()
+	chkpicsdir()
 
 	// tagging mode
-	if len(*tagmode) != 0 {
-		errchk(scanDir(*picsdir, *tagmode))
+	if flag.NArg() > 0 {
+		tag := flag.Args()[0]
+		var err os.Error
+		db, err = sqlite.Open(*dbfile)
+		errchk(err)
+		errchk(scanDir(*picsdir, tag))
+		log.Stdout("Scanning of " + *picsdir + " complete.")
 		db.Close()
 		return
 	}
 
 	// web server mode
+	chktmpl()
+	if *initdb {
+		initDb()
+	} else {
+		var err os.Error
+		db, err = sqlite.Open(*dbfile)
+		errchk(err)
+	}
+	setMaxId()
+	if len(*hostlisten) == 0 {
+		*hostlisten = *host
+	}
 	http.HandleFunc(tagpattern, makeHandler(tagHandler))
 	http.HandleFunc(picpattern, makeHandler(picHandler))
 	http.HandleFunc(tagspattern, makeHandler(tagsHandler))
@@ -176,5 +184,5 @@ func main() {
 	http.HandleFunc("/next", makeHandler(nextHandler))
 	http.HandleFunc("/prev", makeHandler(prevHandler))
 	http.HandleFunc("/", http.HandlerFunc(serveFile))
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(*hostlisten, nil)
 }

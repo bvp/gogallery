@@ -7,14 +7,13 @@ import (
 	"rand"
 	"regexp"
 	"template"
+//	"log"
 )
 
 var (
 	fileServer = http.FileServer(rootdir, "")
 	titleValidator = regexp.MustCompile("^[a-zA-Z0-9]+$")
 	picValidator = regexp.MustCompile(".*(jpg|JPG|jpeg|JPEG|png|gif|GIF)$")
-	refValidator = regexp.MustCompile("http://" + 
-	*host + picpattern + ".*$")
 	templates = make(map[string]*template.Template)
 )
 
@@ -95,13 +94,13 @@ func picHandler(c *http.Conn, r *http.Request, urlpath string) {
 		http.Error(c, err.String(), http.StatusInternalServerError)
 		return
 	}
-	setCurrentId(p.title)
+	currentId = getCurrentId(p.title)
 	// get new tag from POST
 	for k, v := range (*r).Form {
 		if k == "newtag" {
 			// only allow single alphanumeric word tag 
 			if titleValidator.MatchString(v[0]) {
-				insert(maxId+1, p.title, v[0])
+				insert(p.title, v[0])
 			}
 			break
     	}
@@ -121,14 +120,26 @@ func randomHandler(c *http.Conn, r *http.Request, urlpath string) {
 	http.Redirect(c, s, http.StatusFound)
 }
 
+//TODO: check that referer can never have a different *host part ?
 func nextHandler(c *http.Conn, r *http.Request, urlpath string) {
-	if !refValidator.MatchString((*r).Referer) {
+	ok, err := regexp.MatchString(
+		"^http://"+*host+picpattern+".*$", (*r).Referer)
+	if err != nil {
+		http.Error(c, err.String(), http.StatusInternalServerError)
+		return
+	}
+//TODO: maybe print the 1st one instead of a 404 ?
+	if !ok {		
 		http.NotFound(c, r)
 		return
 	}
-	currentId++;
-	if currentId > maxId {
+	prefix := len("http://" + *host + picpattern)
+	file := (*r).Referer[prefix:]
+	currentId = getCurrentId(file)
+	if currentId == maxId {
 		currentId = 1
+	} else {
+		currentId++;
 	}
 	s := selectById(currentId)
 	s = picpattern + s
@@ -136,14 +147,24 @@ func nextHandler(c *http.Conn, r *http.Request, urlpath string) {
 }
 
 func prevHandler(c *http.Conn, r *http.Request, urlpath string) {
-	if !refValidator.MatchString((*r).Referer) {
+	ok, err := regexp.MatchString(
+		"^http://"+*host+picpattern+".*$", (*r).Referer)
+	if err != nil {
+		http.Error(c, err.String(), http.StatusInternalServerError)
+		return
+	}
+	if !ok {		
 		http.NotFound(c, r)
 		return
 	}
-	currentId--;
-	if currentId < 1 {
+	prefix := len("http://" + *host + picpattern)
+	file := (*r).Referer[prefix:]
+	currentId = getCurrentId(file)
+	if currentId == 1 {
 		currentId = maxId
-	}
+	} else {
+		currentId--;
+	}	
 	s := selectById(currentId)
 	s = picpattern + s
 	http.Redirect(c, s, http.StatusFound)
