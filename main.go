@@ -33,6 +33,7 @@ var (
 	tmpldir = flag.String("tmpldir", "tmpl/", "dir for the templates")
 )
 
+//TODO: detect bad file names and rename files
 func scanDir(dirpath string, tag string) os.Error {
 	currentDir, err := os.Open(dirpath, os.O_RDONLY, 0644)
 	if err != nil {
@@ -79,14 +80,10 @@ func scanDir(dirpath string, tag string) os.Error {
 func mkThumb(filepath string) os.Error {
 	dir, file := path.Split(filepath)
 	thumb := path.Join(dir, thumbsDir, file)
-	fd, err := os.Open(thumb, os.O_CREAT|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		if err != os.EEXIST {
-			return err
-		}
+	_, err := os.Stat(thumb)
+	if err == nil {
 		return nil
 	}
-	fd.Close()
 	var args []string = make([]string, 5)
 	args[0] = "/usr/bin/convert"
 	args[1] = filepath
