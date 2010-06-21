@@ -11,6 +11,7 @@ import (
 	"template"
 	"log"
 	"regexp"
+	"strings"
 	sqlite "gosqlite.googlecode.com/hg/sqlite"
 )
 
@@ -77,6 +78,7 @@ func scanDir(dirpath string, tag string) os.Error {
 	return err
 }
 
+//TODO: set up a pool of goroutines to do the converts concurrently (probably not a win on a monocore though)
 func mkThumb(filepath string) os.Error {
 	dir, file := path.Split(filepath)
 	thumb := path.Join(dir, thumbsDir, file)
@@ -95,7 +97,7 @@ func mkThumb(filepath string) os.Error {
 	if err != nil {
 		return err
 	}
-	_, err = os.Wait(pid, os.WNOHANG)
+	_, err = os.Wait(pid, os.WSTOPPED)
 	if err != nil {
 		return err
 	}
@@ -129,6 +131,20 @@ func chktmpl() {
 	for _, tmpl := range []string{"tag", "pic", "tags"} {
 		templates[tmpl] = template.MustParseFile(path.Join(*tmpldir, tmpl+".html"), nil)
 	}
+}
+
+//TODO: add some other potential risky chars
+func badchar(filepath string) (bool, string) {
+	len0 := len(filepath)
+	n := strings.IndexRune(filepath, '\'')
+	for n != -1 {
+		filepath = filepath[0:n] + filepath[n+1:]
+		n = strings.IndexRune(filepath, '\'')
+	}
+	if len(filepath) != len0 {
+		return true, filepath
+	}
+	return false, ""
 }
 
 func errchk(err os.Error) {

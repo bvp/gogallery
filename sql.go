@@ -4,6 +4,7 @@ import (
 	"os"
 	"fmt"
 	"log"
+	"path"
 	sqlite "gosqlite.googlecode.com/hg/sqlite"
 )
 
@@ -27,10 +28,22 @@ func initDb() {
 }
 
 //TODO: if insert stmt returns the id, use that to set maxId
-func insert(path string, tag string) {
-	errchk(db.Exec(
+func insert(filepath string, tag string) {
+	err := db.Exec(
 		"insert into tags values (NULL, '" +
-		path + "', '" + tag + "')"))
+		filepath + "', '" + tag + "')")
+	if err != nil {
+		// check if error was bad char in string 
+		ok, newpath := badchar(filepath)
+		if !ok {
+			log.Exit(err)
+		}
+		// retry with fixed string and rename file if ok
+		errchk(db.Exec(
+		"insert into tags values (NULL, '" +
+		newpath + "', '" + tag + "')"))
+		errchk(os.Rename(path.Join(rootdir, filepath), path.Join(rootdir, newpath)))
+	}
 	maxId++;
 }
 
@@ -48,9 +61,9 @@ func selectById(id int) string {
 	return s
 }
 
-func getCurrentId(path string) int {
+func getCurrentId(filepath string) int {
 	stmt, err := db.Prepare(
-		"select id from tags where file = '" + path + "'")
+		"select id from tags where file = '" + filepath + "'")
 	errchk(err)
 	errchk(stmt.Exec())
 	var i int
