@@ -115,7 +115,14 @@ func tagsHandler(c *http.Conn, r *http.Request, urlpath string) {
 
 func randomHandler(c *http.Conn, r *http.Request, urlpath string) {
 	randId := rand.Intn(maxId) + 1
-	s := selectById(randId)
+	s := selectNext(randId)
+	if s == "" {
+		s = selectPrev(randId)
+	}
+	if s == "" {
+		http.NotFound(c, r)
+		return
+	}
 	s = picpattern + s
 	http.Redirect(c, s, http.StatusFound)
 }
@@ -136,12 +143,10 @@ func nextHandler(c *http.Conn, r *http.Request, urlpath string) {
 	prefix := len("http://" + *host + picpattern)
 	file := (*r).Referer[prefix:]
 	currentId = getCurrentId(file)
-	if currentId == maxId {
-		currentId = 1
-	} else {
-		currentId++;
+	s := selectNext(currentId)
+	if s == "" {
+		s = file
 	}
-	s := selectById(currentId)
 	s = picpattern + s
 	http.Redirect(c, s, http.StatusFound)
 }
@@ -160,12 +165,10 @@ func prevHandler(c *http.Conn, r *http.Request, urlpath string) {
 	prefix := len("http://" + *host + picpattern)
 	file := (*r).Referer[prefix:]
 	currentId = getCurrentId(file)
-	if currentId == 1 {
-		currentId = maxId
-	} else {
-		currentId--;
-	}	
-	s := selectById(currentId)
+	s := selectPrev(currentId)
+	if s == "" {
+		s = file
+	}
 	s = picpattern + s
 	http.Redirect(c, s, http.StatusFound)
 }
