@@ -7,8 +7,15 @@ import (
 	"rand"
 	"regexp"
 	"template"
+	"strings"
+	"io/ioutil"
+	"bytes"
+	"time"
+	"syscall"
 //	"log"
 )
+
+const maxupload int = 2e6
 
 var (
 	fileServer = http.FileServer(rootdir, "")
@@ -43,6 +50,115 @@ type page struct {
 	pic string
 	tags string
 	tag string
+}
+
+type Request2 struct {
+	*http.Request
+	upload []byte
+}
+
+func NewRequest2(r *http.Request, upload []byte) *Request2 {
+    return &Request2{r, upload}
+}
+
+// ParseForm parses the request body as a form for POST requests, or the raw query for GET requests.
+// It is idempotent.
+func (r *Request2) ParseForm() (err os.Error) {
+    if r.Form != nil {
+        return
+    }
+
+    var query string
+    switch r.Method {
+    case "GET":
+        query = r.URL.RawQuery
+    case "POST":
+        if r.Body == nil {
+            r.Form = make(map[string][]string)
+            return os.ErrorString("missing form body")
+        }
+        ct := r.Header["Content-Type"]
+        switch strings.Split(ct, ";", 2)[0] {
+        case "text/plain", "application/x-www-form-urlencoded", "":
+            var b []byte
+            if b, err = ioutil.ReadAll(r.Body); err != nil {
+                r.Form = make(map[string][]string)
+                return err
+            }
+            query = string(b)
+       case "multipart/form-data":
+            boundary := strings.Split(ct, "boundary=", 2)[1]
+            var b []byte
+            if b, err = ioutil.ReadAll(r.Body); err != nil {
+                return err
+            }
+            parts := bytes.Split(b, []byte("--"+boundary+"--\r\n"), 0)
+            parts = bytes.Split(parts[0], []byte("--"+boundary+"\r\n"), 0)
+            for _, data := range parts {
+                if len(data) < 2 {
+                    continue
+                }
+                data = data[0 : len(data)-2] // remove the \r\n
+                var line []byte
+                var rest = data
+                //content-disposition params
+                cdparams := map[string]string{}
+                for {
+                    res := bytes.Split(rest, []byte{'\r', '\n'}, 2)
+                    if len(res) != 2 {
+                        break
+                    }
+                    line = res[0]
+                    rest = res[1]
+                    if len(line) == 0 {
+                        break
+                    }
+
+                    header := strings.Split(string(line), ":", 2)
+                    n := strings.TrimSpace(header[0])
+                    v := strings.TrimSpace(header[1])
+                    if n == "Content-Disposition" {
+                        cdparts := strings.Split(v, ";", 0)
+                        for _, cdparam := range cdparts[1:] {
+                            split := strings.Split(cdparam, "=", 2)
+                            pname := strings.TrimSpace(split[0])
+                            pval := strings.TrimSpace(split[1])
+                            cdparams[pname] = pval
+                        }
+                    }
+                }
+                //if the param doesn't have a name, ignore it
+                if _, ok := cdparams["name"]; !ok {
+                    continue
+                }
+                name := cdparams["name"]
+                //check if name is quoted
+                if strings.HasPrefix(name, `"`) {
+                    name = name[1 : len(name)-1]
+                }
+                //if it's a file, store it in the upload member
+                if filename, ok := cdparams["filename"]; ok {
+                    if strings.HasPrefix(filename, `"`) {
+                        filename = filename[1 : len(filename)-1]
+                    }
+					if len(rest) > maxupload {
+						err = os.NewError("upload too large")
+						return err
+					}
+					copy(r.upload, rest)
+					r.upload = r.upload[0:len(rest)]
+					query = "&upload=" + filename
+                } 
+//TODO: add the tag to the query, if any. the order could matter, we don't want to build a query if there's only a tag and no actual file. check that.
+            }
+        default:
+            r.Form = make(map[string][]string)
+			err = os.NewError("unknown Content-Type")
+			return err
+        }
+    }
+    r.Form, err = http.ParseQuery(query)
+    return
 }
 
 func renderTemplate(c *http.Conn, tmpl string, p *page) {
@@ -115,7 +231,14 @@ func tagsHandler(c *http.Conn, r *http.Request, urlpath string) {
 
 func randomHandler(c *http.Conn, r *http.Request, urlpath string) {
 	randId := rand.Intn(maxId) + 1
-	s := selectById(randId)
+	s := selectNext(randId)
+	if s == "" {
+		s = selectPrev(randId)
+	}
+	if s == "" {
+		http.NotFound(c, r)
+		return
+	}
 	s = picpattern + s
 	http.Redirect(c, s, http.StatusFound)
 }
@@ -136,12 +259,10 @@ func nextHandler(c *http.Conn, r *http.Request, urlpath string) {
 	prefix := len("http://" + *host + picpattern)
 	file := (*r).Referer[prefix:]
 	currentId = getCurrentId(file)
-	if currentId == maxId {
-		currentId = 1
-	} else {
-		currentId++;
+	s := selectNext(currentId)
+	if s == "" {
+		s = file
 	}
-	s := selectById(currentId)
 	s = picpattern + s
 	http.Redirect(c, s, http.StatusFound)
 }
@@ -160,14 +281,47 @@ func prevHandler(c *http.Conn, r *http.Request, urlpath string) {
 	prefix := len("http://" + *host + picpattern)
 	file := (*r).Referer[prefix:]
 	currentId = getCurrentId(file)
-	if currentId == 1 {
-		currentId = maxId
-	} else {
-		currentId--;
-	}	
-	s := selectById(currentId)
+	s := selectPrev(currentId)
+	if s == "" {
+		s = file
+	}
 	s = picpattern + s
 	http.Redirect(c, s, http.StatusFound)
+}
+
+func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
+	var p page
+	p.title = ""
+	upload := make([]byte, maxupload)
+	r2 := NewRequest2(r, upload)
+	err := r2.ParseForm()
+	if err != nil {
+		http.Error(c, err.String(), http.StatusInternalServerError)
+		return
+	}
+
+//TODO: tag it 
+	// if "upload" is in the form, we got a new file, so write it to disk
+	for k, v := range (*r).Form {
+		if k == "upload" {
+			// write file in dir with YYYY-MM-DD format
+			filedir := path.Join(*picsdir, time.UTC().Format("2006-01-02"))
+			e := 0
+			e = syscall.Mkdir(filedir, 0755) 
+			if e != 0 && e != syscall.EEXIST {
+				http.Error(c, err.String(), http.StatusInternalServerError)
+				return
+			}
+			filepath := path.Join(filedir, v[0])
+			err := ioutil.WriteFile(filepath, r2.upload, 0644)
+			if err != nil {
+				http.Error(c, err.String(), http.StatusInternalServerError)
+				return
+			}
+			p.title = v[0] + ": upload sucessfull"
+    	}
+	}	
+	renderTemplate(c, "upload", &p)
 }
 
 func serveFile(c *http.Conn, r *http.Request) {

@@ -15,7 +15,6 @@ import (
 	sqlite "gosqlite.googlecode.com/hg/sqlite"
 )
 
-const maxDirDepth = 24
 const thumbsDir = ".thumbs"
 const picpattern = "/pic/"
 const tagpattern = "/tag/"
@@ -128,7 +127,7 @@ func chktmpl() {
 	if !pathValidator.MatchString(*tmpldir) {
 		log.Exit("tmpldir has to be a subdir of rootdir. (symlink ok)")
 	}
-	for _, tmpl := range []string{"tag", "pic", "tags"} {
+	for _, tmpl := range []string{"tag", "pic", "tags", "upload"} {
 		templates[tmpl] = template.MustParseFile(path.Join(*tmpldir, tmpl+".html"), nil)
 	}
 }
@@ -196,6 +195,7 @@ func main() {
 	http.HandleFunc("/random", makeHandler(randomHandler))
 	http.HandleFunc("/next", makeHandler(nextHandler))
 	http.HandleFunc("/prev", makeHandler(prevHandler))
+	http.HandleFunc("/upload", makeHandler(uploadHandler))
 	http.HandleFunc("/", http.HandlerFunc(serveFile))
 	http.ListenAndServe(*hostlisten, nil)
 }

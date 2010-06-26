@@ -47,12 +47,30 @@ func insert(filepath string, tag string) {
 	maxId++;
 }
 
-func selectById(id int) string {
+func selectNext(id int) string {
+	// use >= and limit to dodge fragmentation issues
 	stmt, err := db.Prepare(
-		"select file from tags where id = " + fmt.Sprint(id))
+		"select file from tags where id > " + fmt.Sprint(id) +
+		" order by id asc limit 1")
 	errchk(err)
 
-	var s string
+	s := ""
+	errchk(stmt.Exec())
+	if stmt.Next() {
+		errchk(stmt.Scan(&s))
+	}
+	stmt.Finalize()
+	return s
+}
+
+func selectPrev(id int) string {
+	// use <= and limit to dodge fragmentation issues
+	stmt, err := db.Prepare(
+		"select file from tags where id < " + fmt.Sprint(id) +
+		" order by id desc limit 1")
+	errchk(err)
+
+	s := ""
 	errchk(stmt.Exec())
 	if stmt.Next() {
 		errchk(stmt.Scan(&s))
