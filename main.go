@@ -33,7 +33,6 @@ var (
 	tmpldir = flag.String("tmpldir", "tmpl/", "dir for the templates")
 )
 
-//TODO: detect bad file names and rename files
 func scanDir(dirpath string, tag string) os.Error {
 	currentDir, err := os.Open(dirpath, os.O_RDONLY, 0644)
 	if err != nil {
