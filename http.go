@@ -136,7 +136,8 @@ func (r *Request2) ParseForm() (err os.Error) {
                 if strings.HasPrefix(name, `"`) {
                     name = name[1 : len(name)-1]
                 }
-                //if it's a file, store it in the upload member
+                // if it's a file, store it in the upload member,
+				// and add the filename to the query
                 if filename, ok := cdparams["filename"]; ok {
                     if strings.HasPrefix(filename, `"`) {
                         filename = filename[1 : len(filename)-1]
@@ -147,9 +148,13 @@ func (r *Request2) ParseForm() (err os.Error) {
 					}
 					copy(r.upload, rest)
 					r.upload = r.upload[0:len(rest)]
-					query = "&upload=" + filename
-                } 
-//TODO: add the tag to the query, if any. the order could matter, we don't want to build a query if there's only a tag and no actual file. check that.
+					query += "&upload=" + filename
+					continue
+                }
+				// if it's the tag, add it to the query
+				if name == "tag" {
+					query += "&tag=" + string(rest)
+				}
             }
         default:
             r.Form = make(map[string][]string)
@@ -289,9 +294,12 @@ func prevHandler(c *http.Conn, r *http.Request, urlpath string) {
 	http.Redirect(c, s, http.StatusFound)
 }
 
+//TODO: create a thumb for new image uploaded? or maybe just call mkthumb? 
 func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
 	var p page
 	p.title = ""
+	tag := ""
+	filepath := ""
 	upload := make([]byte, maxupload)
 	r2 := NewRequest2(r, upload)
 	err := r2.ParseForm()
@@ -300,7 +308,6 @@ func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
 		return
 	}
 
-//TODO: tag it 
 	// if "upload" is in the form, we got a new file, so write it to disk
 	for k, v := range (*r).Form {
 		if k == "upload" {
@@ -312,15 +319,34 @@ func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
 				http.Error(c, err.String(), http.StatusInternalServerError)
 				return
 			}
-			filepath := path.Join(filedir, v[0])
+			filepath = path.Join(filedir, v[0])
 			err := ioutil.WriteFile(filepath, r2.upload, 0644)
 			if err != nil {
 				http.Error(c, err.String(), http.StatusInternalServerError)
 				return
 			}
 			p.title = v[0] + ": upload sucessfull"
+			if tag != "" {
+				break
+			}
+			continue
     	}
-	}	
+		if k == "tag" {
+			tag = v[0]
+			if p.title != "" {
+				break;
+			}
+		}
+	}
+
+	// only insert tag if we have an upload of a pic and a tag for it			
+	if tag != "" && p.title != "" {
+		if titleValidator.MatchString(tag) && 
+			picValidator.MatchString(filepath) {
+			insert(filepath[rootdirlen+1:], tag)
+		}
+	}
+
 	renderTemplate(c, "upload", &p)
 }
 
