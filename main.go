@@ -19,6 +19,8 @@ const thumbsDir = ".thumbs"
 const picpattern = "/pic/"
 const tagpattern = "/tag/"
 const tagspattern = "/tags"
+// security through obscurity for now; just don't advertize your uploadpattern if you don't want others to upload to your server
+const uploadpattern = "/upload"
 
 var (
 	rootdir, _ = os.Getwd();
@@ -33,6 +35,16 @@ var (
 	tmpldir = flag.String("tmpldir", "tmpl/", "dir for the templates")
 )
 
+func mkdir(dirpath string) os.Error {
+	// used syscall because can't figure out how to check EEXIST with os
+	e := 0
+	e = syscall.Mkdir(path.Join(dirpath, thumbsDir), 0755) 
+	if e != 0 && e != syscall.EEXIST {
+		return os.Errno(e)
+	}
+	return nil
+}
+
 func scanDir(dirpath string, tag string) os.Error {
 	currentDir, err := os.Open(dirpath, os.O_RDONLY, 0644)
 	if err != nil {
@@ -44,11 +56,9 @@ func scanDir(dirpath string, tag string) os.Error {
 	}
 	currentDir.Close()		
 	sort.SortStrings(names)
-	// used syscall because can't figure out how to check EEXIST with os
-	e := 0
-	e = syscall.Mkdir(path.Join(dirpath, thumbsDir), 0755) 
-	if e != 0 && e != syscall.EEXIST {
-		return os.Errno(e)
+	err = mkdir(dirpath) 
+	if err != nil {
+		return err
 	}
 	for _,v := range names {
 		childpath := path.Join(dirpath, v)
@@ -194,7 +204,7 @@ func main() {
 	http.HandleFunc("/random", makeHandler(randomHandler))
 	http.HandleFunc("/next", makeHandler(nextHandler))
 	http.HandleFunc("/prev", makeHandler(prevHandler))
-	http.HandleFunc("/upload", makeHandler(uploadHandler))
+	http.HandleFunc(uploadpattern, makeHandler(uploadHandler))
 	http.HandleFunc("/", http.HandlerFunc(serveFile))
 	http.ListenAndServe(*hostlisten, nil)
 }

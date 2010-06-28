@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 	"bytes"
 	"time"
-	"syscall"
 //	"log"
 )
 
@@ -45,11 +44,12 @@ func (p *lines) Write(line string) (n int, err os.Error) {
 
 type page struct {
 	title	string
-	host	string
+	host	string 
 	body	lines
-	pic string
-	tags string
-	tag string
+	pic string 
+	tags string 
+	tag string 
+	upload string
 }
 
 type Request2 struct {
@@ -183,13 +183,13 @@ func tagPage(tag string) *page {
 			pics[i] + "\"><img src=\"http://" + *host + "/" +
 			thumb + "\"/></a>"
 	}
-	return &page{title: title, host: *host, body: pics, pic: picpattern, tags: tagspattern, tag: tagpattern}
+	return &page{title: title, host: *host, body: pics, tags: tagspattern}
 }
 
 func tagsPage() *page {
 	title := "All tags"
 	tags := getTags()
-	return &page{title: title, host: *host, body: tags, pic: picpattern, tags: tagspattern, tag: tagpattern}
+	return &page{title: title, body: tags, host: *host, tag: tagpattern}
 }
 
 func tagHandler(c *http.Conn, r *http.Request, urlpath string) {
@@ -203,13 +203,8 @@ func tagHandler(c *http.Conn, r *http.Request, urlpath string) {
 }
 
 func picHandler(c *http.Conn, r *http.Request, urlpath string) {
-	var p page
-	p.title = urlpath[len(picpattern):]
-	p.body = nil
-	p.host = *host
-	p.pic = picpattern
-	p.tags = tagspattern
-	p.tag = tagpattern
+	p := page{title: urlpath[len(picpattern):], host: *host,
+		tags: tagspattern, pic: picpattern}
 	err := r.ParseForm()
 	if err != nil {
 		http.Error(c, err.String(), http.StatusInternalServerError)
@@ -294,10 +289,8 @@ func prevHandler(c *http.Conn, r *http.Request, urlpath string) {
 	http.Redirect(c, s, http.StatusFound)
 }
 
-//TODO: create a thumb for new image uploaded? or maybe just call mkthumb? 
 func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
-	var p page
-	p.title = ""
+	p := page{title: ""}
 	tag := ""
 	filepath := ""
 	upload := make([]byte, maxupload)
@@ -308,17 +301,24 @@ func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
 		return
 	}
 
+//TODO refactor some of it in a nicer way. maybe wrap the mkdir and error check
 	// if "upload" is in the form, we got a new file, so write it to disk
 	for k, v := range (*r).Form {
 		if k == "upload" {
 			// write file in dir with YYYY-MM-DD format
 			filedir := path.Join(*picsdir, time.UTC().Format("2006-01-02"))
-			e := 0
-			e = syscall.Mkdir(filedir, 0755) 
-			if e != 0 && e != syscall.EEXIST {
+			err = mkdir(filedir)
+			if err != nil {
 				http.Error(c, err.String(), http.StatusInternalServerError)
 				return
 			}
+			// create thumbsdir while we're at it
+			err = mkdir(path.Join(filedir, thumbsDir))
+			if err != nil {
+				http.Error(c, err.String(), http.StatusInternalServerError)
+				return
+			}
+			// finally write the file
 			filepath = path.Join(filedir, v[0])
 			err := ioutil.WriteFile(filepath, r2.upload, 0644)
 			if err != nil {
@@ -343,6 +343,11 @@ func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
 	if tag != "" && p.title != "" {
 		if titleValidator.MatchString(tag) && 
 			picValidator.MatchString(filepath) {
+			err = mkThumb(filepath)
+			if err != nil {
+				http.Error(c, err.String(), http.StatusInternalServerError)
+				return 
+			}
 			insert(filepath[rootdirlen+1:], tag)
 		}
 	}
