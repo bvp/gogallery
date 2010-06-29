@@ -301,7 +301,6 @@ func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
 		return
 	}
 
-//TODO refactor some of it in a nicer way. maybe wrap the mkdir and error check
 	// if "upload" is in the form, we got a new file, so write it to disk
 	for k, v := range (*r).Form {
 		if k == "upload" {
