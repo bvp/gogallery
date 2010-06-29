@@ -38,7 +38,7 @@ var (
 func mkdir(dirpath string) os.Error {
 	// used syscall because can't figure out how to check EEXIST with os
 	e := 0
-	e = syscall.Mkdir(path.Join(dirpath, thumbsDir), 0755) 
+	e = syscall.Mkdir(dirpath, 0755) 
 	if e != 0 && e != syscall.EEXIST {
 		return os.Errno(e)
 	}
@@ -56,7 +56,7 @@ func scanDir(dirpath string, tag string) os.Error {
 	}
 	currentDir.Close()		
 	sort.SortStrings(names)
-	err = mkdir(dirpath) 
+	err = mkdir(path.Join(dirpath, thumbsDir)) 
 	if err != nil {
 		return err
 	}
