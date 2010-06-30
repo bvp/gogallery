@@ -52,6 +52,11 @@ type page struct {
 	upload string
 }
 
+func newPage(title string, body lines) *page {
+	p := page{title, *host, body, picpattern, tagspattern, tagpattern, uploadpattern}
+	return &p
+}
+
 type Request2 struct {
 	*http.Request
 	upload []byte
@@ -174,7 +179,6 @@ func renderTemplate(c *http.Conn, tmpl string, p *page) {
 }
 
 func tagPage(tag string) *page {
-	title := tag
 	pics := getPics(tag)
 	for i := 0; i<len(pics); i++ {
 		dir, file := path.Split(pics[i])
@@ -183,13 +187,13 @@ func tagPage(tag string) *page {
 			pics[i] + "\"><img src=\"http://" + *host + "/" +
 			thumb + "\"/></a>"
 	}
-	return &page{title: title, host: *host, body: pics, tags: tagspattern}
+	return newPage(tag, pics)
 }
 
 func tagsPage() *page {
 	title := "All tags"
 	tags := getTags()
-	return &page{title: title, body: tags, host: *host, tag: tagpattern}
+	return newPage(title, tags)
 }
 
 func tagHandler(c *http.Conn, r *http.Request, urlpath string) {
@@ -203,8 +207,7 @@ func tagHandler(c *http.Conn, r *http.Request, urlpath string) {
 }
 
 func picHandler(c *http.Conn, r *http.Request, urlpath string) {
-	p := page{title: urlpath[len(picpattern):], host: *host,
-		tags: tagspattern, pic: picpattern}
+	p := newPage(urlpath[len(picpattern):], nil)
 	err := r.ParseForm()
 	if err != nil {
 		http.Error(c, err.String(), http.StatusInternalServerError)
@@ -221,7 +224,7 @@ func picHandler(c *http.Conn, r *http.Request, urlpath string) {
 			break
     	}
 	}	
-	renderTemplate(c, "pic", &p)
+	renderTemplate(c, "pic", p)
 }
 
 func tagsHandler(c *http.Conn, r *http.Request, urlpath string) {
@@ -290,7 +293,7 @@ func prevHandler(c *http.Conn, r *http.Request, urlpath string) {
 }
 
 func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
-	p := page{title: ""}
+	p := newPage("", nil)
 	tag := ""
 	filepath := ""
 	upload := make([]byte, maxupload)
@@ -351,7 +354,7 @@ func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
 		}
 	}
 
-	renderTemplate(c, "upload", &p)
+	renderTemplate(c, "upload", p)
 }
 
 func serveFile(c *http.Conn, r *http.Request) {
