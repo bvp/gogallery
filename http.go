@@ -260,7 +260,7 @@ func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
 				b := make([]byte, 128)
 				n, err := part.Read(b)
 //TODO: better err handling ?
-				if err != nil {
+				if err == nil {
 					b = b[0:n]
 					tag = string(b)
 				}
