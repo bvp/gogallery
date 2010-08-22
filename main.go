@@ -30,9 +30,9 @@ var (
 	host = flag.String("host", "localhost:8080", "hostname and port for this server that will appear in the urls")
 	hostlisten = flag.String("hostlisten", "", "hostname and port on which this server really listen (defaults to -host value)")
 	initdb    = flag.Bool("init", false, "clean out the db file and start from scratch")
-	picsdir = flag.String("picsdir", "pics/", "Root dir for all the pics")
+	picsdir = flag.String("picsdir", "./", "Root dir for all the pics")
 	thumbsize   = flag.String("thumbsize", "200x300", "size of the thumbnails")
-	tmpldir = flag.String("tmpldir", "tmpl/", "dir for the templates")
+	tmpldir = flag.String("tmpldir", "", "dir for the templates. generates basic ones in " + basicTemplates + " by default")
 )
 
 func mkdir(dirpath string) os.Error {
@@ -46,7 +46,7 @@ func mkdir(dirpath string) os.Error {
 }
 
 func scanDir(dirpath string, tag string) os.Error {
-	currentDir, err := os.Open(dirpath, os.O_RDONLY, 0644)
+	currentDir, err := os.Open(dirpath, os.O_RDONLY, 0744)
 	if err != nil {
 		return err
 	}
@@ -126,6 +126,13 @@ func chkpicsdir() {
 }
 
 func chktmpl() {
+	if *tmpldir == "" {
+		*tmpldir = basicTemplates
+		err := mkTemplates(*tmpldir)
+		if err != nil {
+			log.Exit(err)
+		}
+	}
 	// same drill for templates.
 	*tmpldir = path.Clean(*tmpldir)
 	if (*tmpldir)[0] != '/' {
