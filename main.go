@@ -33,6 +33,7 @@ var (
 	picsdir = flag.String("picsdir", "./", "Root dir for all the pics")
 	thumbsize   = flag.String("thumbsize", "200x300", "size of the thumbnails")
 	tmpldir = flag.String("tmpldir", "", "dir for the templates. generates basic ones in " + basicTemplates + " by default")
+	norand = flag.Bool("norand", false, "disable random when clicking on image")
 )
 
 func mkdir(dirpath string) os.Error {
