@@ -34,6 +34,7 @@ var (
 	thumbsize   = flag.String("thumbsize", "200x300", "size of the thumbnails")
 	tmpldir = flag.String("tmpldir", "", "dir for the templates. generates basic ones in " + basicTemplates + " by default")
 	norand = flag.Bool("norand", false, "disable random when clicking on image")
+	help = flag.Bool("h", false, "show this help")
 )
 
 func mkdir(dirpath string) os.Error {
@@ -170,7 +171,7 @@ func errchk(err os.Error) {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage:\t gogallery [-picsdir=\"dir\"] tag \n");
+	fmt.Fprintf(os.Stderr, "usage: \n\t gogallery [-picsdir=\"dir\"] tag \n");
 	fmt.Fprintf(os.Stderr, "\t gogallery \n");
 	flag.PrintDefaults();
 	os.Exit(2);
@@ -179,6 +180,10 @@ func usage() {
 func main() {
 	flag.Usage = usage
 	flag.Parse()
+	if *help {
+		usage()
+	}
+	
 	chkpicsdir()
 
 	// tagging mode
