@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path"
+	"regexp"
 )
 
 const basicTemplates = ".tmpl"
@@ -25,6 +26,9 @@ pic_html = `
 <a href="http://{host}{tags}"> tags </a>
 </td>
 <td>
+<a href="http://{host}/random"> rand </a>
+</td>
+<td>
 <a href="http://{host}/next"> next </a>
 </td>
 </table>
@@ -34,7 +38,7 @@ pic_html = `
 <div>
 <center>
 <a href="http://{host}/random">
-<img src="http://{host}/{title}" alt={title} />
+<img src="http://{host}/{title}" alt="{title}" />
 </a>
 </center>
 </div>
@@ -103,6 +107,14 @@ func mkTemplates(dirpath string) os.Error {
 	err := mkdir(dirpath)
 	if err != nil {
 		return err
+	}
+	
+	if *norand {
+		randHtml := regexp.MustCompile(`<a href="http://{host}/random">
+`)
+		pic_html = randHtml.ReplaceAllString(pic_html, 
+		`<a href="http://{host}/{title}">
+`)
 	}
 	
 	tmpls := [][2]string{[2]string{pic_html, picTmpl}, [2]string{tag_html, tagTmpl}, [2]string{tags_html, tagsTmpl}, [2]string{upload_html, uploadTmpl}}
