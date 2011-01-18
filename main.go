@@ -33,7 +33,7 @@ var (
 	picsdir = flag.String("picsdir", "./", "Root dir for all the pics")
 	thumbsize   = flag.String("thumbsize", "200x300", "size of the thumbnails")
 	tmpldir = flag.String("tmpldir", "", "dir for the templates. generates basic ones in " + basicTemplates + " by default")
-	norand = flag.Bool("norand", false, "disable random when clicking on image")
+	norand = flag.Bool("norand", false, "disable random for when clicking on image")
 	help = flag.Bool("h", false, "show this help")
 )
 
@@ -193,7 +193,7 @@ func main() {
 		db, err = sqlite.Open(*dbfile)
 		errchk(err)
 		errchk(scanDir(*picsdir, tag))
-		log.Stdout("Scanning of " + *picsdir + " complete.")
+		log.Print("Scanning of " + *picsdir + " complete.")
 		db.Close()
 		return
 	}

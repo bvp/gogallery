@@ -24,7 +24,7 @@ func initDb() {
 	errchk(db.Exec(
 		"create table tags (id integer primary key, file text, tag text)"))
 	errchk(scanDir(*picsdir, "all"))
-	log.Stdout("Scanning of " + *picsdir + " complete.")
+	log.Print("Scanning of " + *picsdir + " complete.")
 }
 
 //TODO: if insert stmt returns the id, use that to set maxId

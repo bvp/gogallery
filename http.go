@@ -59,10 +59,10 @@ func newPage(title string, body lines) *page {
 	return &p
 }
 
-func renderTemplate(c *http.Conn, tmpl string, p *page) {
-	err := templates[tmpl].Execute(p, c)
+func renderTemplate(w http.ResponseWriter, tmpl string, p *page) {
+	err := templates[tmpl].Execute(p, w)
 	if err != nil {
-		http.Error(c, err.String(), http.StatusInternalServerError)
+		http.Error(w, err.String(), http.StatusInternalServerError)
 	}
 }
 
@@ -84,21 +84,21 @@ func tagsPage() *page {
 	return newPage(title, tags)
 }
 
-func tagHandler(c *http.Conn, r *http.Request, urlpath string) {
+func tagHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	tag := urlpath[len(tagpattern):]
 	if !titleValidator.MatchString(tag) {
-		http.NotFound(c, r)
+		http.NotFound(w, r)
 		return
 	}
 	p := tagPage(tag)
-	renderTemplate(c, "tag", p)
+	renderTemplate(w, "tag", p)
 }
 
-func picHandler(c *http.Conn, r *http.Request, urlpath string) {
+func picHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	p := newPage(urlpath[len(picpattern):], nil)
 	err := r.ParseForm()
 	if err != nil {
-		http.Error(c, err.String(), http.StatusInternalServerError)
+		http.Error(w, err.String(), http.StatusInternalServerError)
 		return
 	}
 	currentId = getCurrentId(p.title)
@@ -112,39 +112,39 @@ func picHandler(c *http.Conn, r *http.Request, urlpath string) {
 			break
     	}
 	}	
-	renderTemplate(c, "pic", p)
+	renderTemplate(w, "pic", p)
 }
 
-func tagsHandler(c *http.Conn, r *http.Request, urlpath string) {
+func tagsHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	p := tagsPage()
-	renderTemplate(c, "tags", p)
+	renderTemplate(w, "tags", p)
 }
 
-func randomHandler(c *http.Conn, r *http.Request, urlpath string) {
+func randomHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	randId := rand.Intn(maxId) + 1
 	s := selectNext(randId)
 	if s == "" {
 		s = selectPrev(randId)
 	}
 	if s == "" {
-		http.NotFound(c, r)
+		http.NotFound(w, r)
 		return
 	}
 	s = picpattern + s
-	http.Redirect(c, s, http.StatusFound)
+	http.Redirect(w, r, s, http.StatusFound)
 }
 
 //TODO: check that referer can never have a different *host part ?
-func nextHandler(c *http.Conn, r *http.Request, urlpath string) {
+func nextHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	ok, err := regexp.MatchString(
 		"^http://"+*host+picpattern+".*$", (*r).Referer)
 	if err != nil {
-		http.Error(c, err.String(), http.StatusInternalServerError)
+		http.Error(w, err.String(), http.StatusInternalServerError)
 		return
 	}
 //TODO: maybe print the 1st one instead of a 404 ?
 	if !ok {		
-		http.NotFound(c, r)
+		http.NotFound(w, r)
 		return
 	}
 	prefix := len("http://" + *host + picpattern)
@@ -155,18 +155,18 @@ func nextHandler(c *http.Conn, r *http.Request, urlpath string) {
 		s = file
 	}
 	s = picpattern + s
-	http.Redirect(c, s, http.StatusFound)
+	http.Redirect(w, r, s, http.StatusFound)
 }
 
-func prevHandler(c *http.Conn, r *http.Request, urlpath string) {
+func prevHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	ok, err := regexp.MatchString(
 		"^http://"+*host+picpattern+".*$", (*r).Referer)
 	if err != nil {
-		http.Error(c, err.String(), http.StatusInternalServerError)
+		http.Error(w, err.String(), http.StatusInternalServerError)
 		return
 	}
 	if !ok {		
-		http.NotFound(c, r)
+		http.NotFound(w, r)
 		return
 	}
 	prefix := len("http://" + *host + picpattern)
@@ -177,10 +177,10 @@ func prevHandler(c *http.Conn, r *http.Request, urlpath string) {
 		s = file
 	}
 	s = picpattern + s
-	http.Redirect(c, s, http.StatusFound)
+	http.Redirect(w, r, s, http.StatusFound)
 }
 
-func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
+func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	p := newPage("", nil)
 	tag := ""
 	filepath := ""
@@ -192,7 +192,7 @@ func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
 		for {
 			part, err := reader.NextPart()
 			if err != nil {
-				http.Error(c, err.String(), http.StatusInternalServerError)
+				http.Error(w, err.String(), http.StatusInternalServerError)
 				return
 			}
 			if part == nil {
@@ -210,22 +210,24 @@ func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
 					}
 				}
 				// get the upload
-				b := make([]byte, maxupload)
-				var upload []byte
+				b := bytes.NewBuffer(make([]byte, 0, maxupload))
+//				var upload []byte
 				for {
-					n, err := part.Read(b)
+//					n, err := part.Read(b)
+					_, err := b.ReadFrom(part)
 					if err != nil {
 						if err != os.EOF {
 //TODO: not sure that actually detects an unexpected EOF, oh well...
-							http.Error(c, err.String(), http.StatusInternalServerError)
+							http.Error(w, err.String(), http.StatusInternalServerError)
 							return 
 						}
 						break
 					}	
-					upload = bytes.Add(upload, b[0:n])
-					if len(upload) > maxupload {
+//					upload = append(upload, b[0:n])
+//					if len(upload) > maxupload {
+					if b.Len() > maxupload {
 						err = os.NewError("upload too large")
-						http.Error(c, err.String(), http.StatusInternalServerError)
+						http.Error(w, err.String(), http.StatusInternalServerError)
 						return
 					}
 				}				
@@ -233,20 +235,21 @@ func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
 				filedir := path.Join(*picsdir, time.UTC().Format("2006-01-02"))
 				err = mkdir(filedir)
 				if err != nil {
-					http.Error(c, err.String(), http.StatusInternalServerError)
+					http.Error(w, err.String(), http.StatusInternalServerError)
 					return
 				}
 				// create thumbsdir while we're at it
 				err = mkdir(path.Join(filedir, thumbsDir))
 				if err != nil {
-					http.Error(c, err.String(), http.StatusInternalServerError)
+					http.Error(w, err.String(), http.StatusInternalServerError)
 					return
 				}
 				// finally write the file
 				filepath = path.Join(filedir, filename)
-				err = ioutil.WriteFile(filepath, upload, 0644)
+//				err = ioutil.WriteFile(filepath, upload, 0644)
+				err = ioutil.WriteFile(filepath, b.Bytes(), 0644)
 				if err != nil {
-					http.Error(c, err.String(), http.StatusInternalServerError)
+					http.Error(w, err.String(), http.StatusInternalServerError)
 					return
 				}
 				p.title = filename + ": upload sucessfull"
@@ -275,7 +278,7 @@ func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
 				picValidator.MatchString(filepath) {
 				err = mkThumb(filepath)
 				if err != nil {
-					http.Error(c, err.String(), http.StatusInternalServerError)
+					http.Error(w, err.String(), http.StatusInternalServerError)
 					return 
 				}
 				insert(filepath[rootdirlen+1:], tag)
@@ -283,16 +286,16 @@ func uploadHandler(c *http.Conn, r *http.Request, urlpath string) {
 		}
 	}
 		
-	renderTemplate(c, "upload", p)
+	renderTemplate(w, "upload", p)
 }
 
-func serveFile(c *http.Conn, r *http.Request) {
-	fileServer.ServeHTTP(c, r);
+func serveFile(w http.ResponseWriter, r *http.Request) {
+	fileServer.ServeHTTP(w, r);
 }
 
-func makeHandler(fn func(*http.Conn, *http.Request, string)) http.HandlerFunc {
-	return func(c *http.Conn, r *http.Request) {
+func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		title := r.URL.Path
-		fn(c, r, title)
+		fn(w, r, title)
 	}
 }
