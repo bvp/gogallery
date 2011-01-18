@@ -20,16 +20,16 @@ pic_html = `
 <table>
 <tr>
 <td>
-<a href="http://{host}/prev"> prev </a>
+<a href="http://{Host}/prev"> prev </a>
 </td>
 <td>
-<a href="http://{host}{tags}"> tags </a>
+<a href="http://{Host}{Tags}"> tags </a>
 </td>
 <td>
-<a href="http://{host}/random"> rand </a>
+<a href="http://{Host}/random"> rand </a>
 </td>
 <td>
-<a href="http://{host}/next"> next </a>
+<a href="http://{Host}/next"> next </a>
 </td>
 </table>
 </center>
@@ -37,15 +37,15 @@ pic_html = `
 
 <div>
 <center>
-<a href="http://{host}/random">
-<img src="http://{host}/{title}" alt="{title}" />
+<a href="http://{Host}/random">
+<img src="http://{Host}/{Title}" alt="{Title}" />
 </a>
 </center>
 </div>
 
 <div> 
 <center>
-<form action="{pic}{title}" method="post"> 
+<form action="{Pic}{Title}" method="post"> 
 <input type="text" name="newtag"/> 
 <input type="submit" value="Tag!"> 
 </center>
@@ -54,17 +54,17 @@ pic_html = `
 `
 
 tag_html = `
-<h1><center>{title}</center></h1>
+<h1><center>{Title}</center></h1>
 
 <div>
 <center>
-<a href="http://{host}{tags}"> tags </a>
+<a href="http://{Host}{Tags}"> tags </a>
 </center>
 </div>
 
 <div>
 <center>
-{.repeated section body}
+{.repeated section Body}
 {@}
 {.end}
 </center>
@@ -72,12 +72,12 @@ tag_html = `
 `
 
 tags_html = `
-<h1><center>{title}</center></h1>
+<h1><center>{Title}</center></h1>
 
 <div>
 <center>
-{.repeated section body}
-<a href="http://{host}{tag}{@}">{@}</a>
+{.repeated section Body}
+<a href="http://{Host}{Tag}{@}">{@}</a>
 {.end}
 </center>
 </div>
@@ -85,7 +85,7 @@ tags_html = `
 upload_html = `
 <div> 
 <center>
-<form action="{upload}" enctype="multipart/form-data" method="post">
+<form action="{Upload}" enctype="multipart/form-data" method="post">
 Upload <input type="file" name="upload" size="40"> <br>
 Tag <input type="text" name="tag" size="30"> <br>
 <input name="submit" value="submit" type="submit"><input type="reset">
@@ -96,7 +96,7 @@ Tag <input type="text" name="tag" size="30"> <br>
 <div> 
 <center>
 <p>
-{title}
+{Title}
 </p>
 </center>
 </div>
@@ -110,10 +110,10 @@ func mkTemplates(dirpath string) os.Error {
 	}
 	
 	if *norand {
-		randHtml := regexp.MustCompile(`<a href="http://{host}/random">
+		randHtml := regexp.MustCompile(`<a href="http://{Host}/random">
 `)
 		pic_html = randHtml.ReplaceAllString(pic_html, 
-		`<a href="http://{host}/{title}">
+		`<a href="http://{Host}/{Title}">
 `)
 	}
 	

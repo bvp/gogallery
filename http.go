@@ -45,13 +45,13 @@ func (p *lines) Write(line string) (n int, err os.Error) {
 }
 
 type page struct {
-	title	string
-	host	string 
-	body	lines
-	pic string 
-	tags string 
-	tag string 
-	upload string
+	Title	string
+	Host	string 
+	Body	lines
+	Pic string 
+	Tags string 
+	Tag string 
+	Upload string
 }
 
 func newPage(title string, body lines) *page {
@@ -101,13 +101,13 @@ func picHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 		http.Error(w, err.String(), http.StatusInternalServerError)
 		return
 	}
-	currentId = getCurrentId(p.title)
+	currentId = getCurrentId(p.Title)
 	// get new tag from POST
 	for k, v := range (*r).Form {
 		if k == "newtag" {
 			// only allow single alphanumeric word tag 
 			if titleValidator.MatchString(v[0]) {
-				insert(p.title, v[0])
+				insert(p.Title, v[0])
 			}
 			break
     	}
@@ -252,7 +252,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 					http.Error(w, err.String(), http.StatusInternalServerError)
 					return
 				}
-				p.title = filename + ": upload sucessfull"
+				p.Title = filename + ": upload sucessfull"
 				if tag != "" {
 					break
 				}
@@ -267,13 +267,13 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 					b = b[0:n]
 					tag = string(b)
 				}
-				if p.title != "" {
+				if p.Title != "" {
 					break;
 				}
 			}
 		}
 		// only insert tag if we have an upload of a pic and a tag for it			
-		if tag != "" && p.title != "" {
+		if tag != "" && p.Title != "" {
 			if titleValidator.MatchString(tag) && 
 				picValidator.MatchString(filepath) {
 				err = mkThumb(filepath)
