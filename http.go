@@ -23,6 +23,7 @@ var (
 	templates = make(map[string]*template.Template)
 	fileinform = "upload"
 	taginform = "tag"
+	idstring = "gogallery"
 )
 
 type lines []string
@@ -60,7 +61,7 @@ func newPage(title string, body lines) *page {
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, p *page) {
-	err := templates[tmpl].Execute(p, w)
+	err := templates[tmpl].Execute(w, p)
 	if err != nil {
 		http.Error(w, err.String(), http.StatusInternalServerError)
 	}
@@ -296,6 +297,7 @@ func serveFile(w http.ResponseWriter, r *http.Request) {
 func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		title := r.URL.Path
+		w.SetHeader("Server", idstring)
 		fn(w, r, title)
 	}
 }
