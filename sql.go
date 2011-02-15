@@ -36,7 +36,7 @@ func insert(filepath string, tag string) {
 		// check if error was bad char in string 
 		ok, newpath := badchar(filepath)
 		if !ok {
-			log.Exit(err)
+			log.Fatal(err)
 		}
 		// retry with fixed string and rename file if ok
 		errchk(db.Exec(
@@ -105,7 +105,7 @@ func setMaxId() {
 	}
 	stmt.Finalize()
 	if i == 0 {
-		log.Exit("empty db. fill it with with -init or -tagmode")
+		log.Fatal("empty db. fill it with with -init or -tagmode")
 	}
 	// now do the real work
 	stmt, err = db.Prepare("select max(id) from tags")

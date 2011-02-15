@@ -22,6 +22,7 @@ const tagspattern = "/tags"
 // security through obscurity for now; just don't advertize your uploadpattern if you don't want others to upload to your server
 const uploadpattern = "/upload"
 
+//TODO: allow _ and - in tagnames
 var (
 	rootdir, _ = os.Getwd();
 	rootdirlen = len(rootdir)
@@ -103,11 +104,11 @@ func mkThumb(filepath string) os.Error {
 	args[3] = *thumbsize
 	args[4] = thumb
 	fds := []*os.File{os.Stdin, os.Stdout, os.Stderr}
-	pid, err := os.ForkExec(args[0], args, os.Environ(), "", fds)
+	p, err := os.StartProcess(args[0], args, os.Environ(), "", fds)
 	if err != nil {
 		return err
 	}
-	_, err = os.Wait(pid, os.WSTOPPED)
+	_, err = os.Wait(p.Pid, os.WSTOPPED)
 	if err != nil {
 		return err
 	}
@@ -123,7 +124,7 @@ func chkpicsdir() {
 	}
 	pathValidator := regexp.MustCompile(rootdir + ".*")
 	if !pathValidator.MatchString(*picsdir) {
-		log.Exit("picsdir has to be a subdir of rootdir. (symlink ok)")
+		log.Fatal("picsdir has to be a subdir of rootdir. (symlink ok)")
 	}
 }
 
@@ -132,7 +133,7 @@ func chktmpl() {
 		*tmpldir = basicTemplates
 		err := mkTemplates(*tmpldir)
 		if err != nil {
-			log.Exit(err)
+			log.Fatal(err)
 		}
 	}
 	// same drill for templates.
@@ -143,7 +144,7 @@ func chktmpl() {
 	}
 	pathValidator := regexp.MustCompile(rootdir + ".*")
 	if !pathValidator.MatchString(*tmpldir) {
-		log.Exit("tmpldir has to be a subdir of rootdir. (symlink ok)")
+		log.Fatal("tmpldir has to be a subdir of rootdir. (symlink ok)")
 	}
 	for _, tmpl := range []string{"tag", "pic", "tags", "upload"} {
 		templates[tmpl] = template.MustParseFile(path.Join(*tmpldir, tmpl+".html"), nil)
@@ -166,7 +167,7 @@ func badchar(filepath string) (bool, string) {
 
 func errchk(err os.Error) {
 	if err != nil {
-		log.Exit(err)
+		log.Fatal(err)
 	}
 }
 
