@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path"
 	"http"
@@ -9,21 +10,24 @@ import (
 	"template"
 	"strings"
 	"io/ioutil"
-	"bytes"
+	"smtp"
 	"time"
 //	"fmt"
 )
 
-const maxupload int = 2e6
+const (
+	maxupload = 10e6
+	largeupload = 2e6
+	fileinform = "upload"
+	taginform = "tag"
+	idstring = "gogallery"
+)
 
 var (
 	fileServer = http.FileServer(rootdir, "")
 	titleValidator = regexp.MustCompile("^[a-zA-Z0-9]+$")
 	picValidator = regexp.MustCompile(".*(jpg|JPG|jpeg|JPEG|png|gif|GIF)$")
 	templates = make(map[string]*template.Template)
-	fileinform = "upload"
-	taginform = "tag"
-	idstring = "gogallery"
 )
 
 type lines []string
@@ -92,7 +96,7 @@ func tagHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 		return
 	}
 	p := tagPage(tag)
-	renderTemplate(w, "tag", p)
+	renderTemplate(w, tagName, p)
 }
 
 func picHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
@@ -113,12 +117,12 @@ func picHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 			break
     	}
 	}	
-	renderTemplate(w, "pic", p)
+	renderTemplate(w, picName, p)
 }
 
 func tagsHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	p := tagsPage()
-	renderTemplate(w, "tags", p)
+	renderTemplate(w, tagsName, p)
 }
 
 func randomHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
@@ -203,35 +207,33 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 			// get the file
 			if partName == fileinform {
 				// get the filename 
-				var filename string
-				for k, v := range part.Header {
-					if k == "Content-Disposition" {
-						filename = v[strings.Index(v, "filename="):]
-						filename = filename[10:len(filename)-1]
-					}
-				}
+//TODO: use new native func to do that
+				line := part.Header.Get("Content-Disposition")
+				filename := line[strings.Index(line, "filename="):]
+//TODO: that will fail if it's not at the end of the line, do better with a regex
+				filename = filename[10:len(filename)-1]
 				// get the upload
+//TODO: sizing the buffer and then checking n indeed prevents filling mem and/or disk, but the thing will still be uploaded fully -> waste of b/w. => do better?
 				b := bytes.NewBuffer(make([]byte, 0, maxupload))
-//				var upload []byte
-				for {
-//					n, err := part.Read(b)
-					_, err := b.ReadFrom(part)
-					if err != nil {
-						if err != os.EOF {
-//TODO: not sure that actually detects an unexpected EOF, oh well...
-							http.Error(w, err.String(), http.StatusInternalServerError)
-							return 
-						}
-						break
-					}	
-//					upload = append(upload, b[0:n])
-//					if len(upload) > maxupload {
-					if b.Len() > maxupload {
-						err = os.NewError("upload too large")
+				n, err := b.ReadFrom(part)
+				if err != nil {
+					if err != os.EOF {
 						http.Error(w, err.String(), http.StatusInternalServerError)
 						return
 					}
-				}				
+				}
+				if n > maxupload {
+					err = os.NewError("upload too large")
+					http.Error(w, err.String(), http.StatusInternalServerError)
+					return
+				}
+				if n > largeupload && *conffile != "" {
+					err = smtp.SendMail(conf.Server, nil, conf.From, conf.To, []byte(conf.Message))
+					if err != nil {
+						http.Error(w, err.String(), http.StatusInternalServerError)
+						return 
+					}
+				}
 				// write file in dir with YYYY-MM-DD format
 				filedir := path.Join(*picsdir, time.UTC().Format("2006-01-02"))
 				err = mkdir(filedir)
@@ -247,7 +249,6 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 				}
 				// finally write the file
 				filepath = path.Join(filedir, filename)
-//				err = ioutil.WriteFile(filepath, upload, 0644)
 				err = ioutil.WriteFile(filepath, b.Bytes(), 0644)
 				if err != nil {
 					http.Error(w, err.String(), http.StatusInternalServerError)
@@ -287,7 +288,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 		}
 	}
 		
-	renderTemplate(w, "upload", p)
+	renderTemplate(w, upName, p)
 }
 
 func serveFile(w http.ResponseWriter, r *http.Request) {
@@ -297,7 +298,7 @@ func serveFile(w http.ResponseWriter, r *http.Request) {
 func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		title := r.URL.Path
-		w.SetHeader("Server", idstring)
+		w.Header().Set("Server", idstring)
 		fn(w, r, title)
 	}
 }
