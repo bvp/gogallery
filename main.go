@@ -1,17 +1,18 @@
 package main
 
 import (
-	"os"
-	"syscall"
-	"sort"
-	"path"
-	"fmt"
 	"flag"
+	"fmt"
 	"http"
-	"template"
+	"json"
 	"log"
+	"os"
+	"path"
 	"regexp"
+	"sort"
 	"strings"
+	"syscall"
+	"template"
 	sqlite "gosqlite.googlecode.com/hg/sqlite"
 )
 
@@ -24,24 +25,45 @@ const uploadpattern = "/upload"
 
 //TODO: allow _ and - in tagnames
 var (
-	rootdir, _ = os.Getwd();
+	rootdir, _ = os.Getwd()
 	rootdirlen = len(rootdir)
+	conf emailConf
 	// command flags 
-	dbfile   = flag.String("dbfile", "./gallery.db", "File to store the db")
-	host = flag.String("host", "localhost:8080", "hostname and port for this server that will appear in the urls")
-	hostlisten = flag.String("hostlisten", "", "hostname and port on which this server really listen (defaults to -host value)")
-	initdb    = flag.Bool("init", false, "clean out the db file and start from scratch")
-	picsdir = flag.String("picsdir", "./", "Root dir for all the pics")
-	thumbsize   = flag.String("thumbsize", "200x300", "size of the thumbnails")
-	tmpldir = flag.String("tmpldir", "", "dir for the templates. generates basic ones in " + basicTemplates + " by default")
-	norand = flag.Bool("norand", false, "disable random for when clicking on image")
-	help = flag.Bool("h", false, "show this help")
+	dbfile     = flag.String("dbfile", "./gallery.db", "File to store the db")
+	conffile = flag.String("conf", "", "json conf file to send email alerts")
+	host       = flag.String("host", "localhost:8080", "listening port and hostname that will appear in the urls")
+	initdb     = flag.Bool("init", false, "clean out the db file and start from scratch")
+	picsdir    = flag.String("picsdir", "./", "Root dir for all the pics")
+	thumbsize  = flag.String("thumbsize", "200x300", "size of the thumbnails")
+	tmpldir    = flag.String("tmpldir", "", "dir for the templates. generates basic ones in "+basicTemplates+" by default")
+	norand     = flag.Bool("norand", false, "disable random for when clicking on image")
+	help       = flag.Bool("h", false, "show this help")
 )
+
+type emailConf struct {
+	Server string
+	From string
+	To []string
+	Message string
+}
+
+func readEmailConf(confFile string) {
+	r, err := os.Open(confFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	dec := json.NewDecoder(r)
+	err = dec.Decode(&conf)
+	if err != nil {
+		log.Fatal(err)
+	}
+	r.Close()
+}
 
 func mkdir(dirpath string) os.Error {
 	// used syscall because can't figure out how to check EEXIST with os
 	e := 0
-	e = syscall.Mkdir(dirpath, 0755) 
+	e = syscall.Mkdir(dirpath, 0755)
 	if e != 0 && e != syscall.EEXIST {
 		return os.Errno(e)
 	}
@@ -49,7 +71,7 @@ func mkdir(dirpath string) os.Error {
 }
 
 func scanDir(dirpath string, tag string) os.Error {
-	currentDir, err := os.Open(dirpath, os.O_RDONLY, 0744)
+	currentDir, err := os.Open(dirpath)
 	if err != nil {
 		return err
 	}
@@ -57,13 +79,13 @@ func scanDir(dirpath string, tag string) os.Error {
 	if err != nil {
 		return err
 	}
-	currentDir.Close()		
+	currentDir.Close()
 	sort.SortStrings(names)
-	err = mkdir(path.Join(dirpath, thumbsDir)) 
+	err = mkdir(path.Join(dirpath, thumbsDir))
 	if err != nil {
 		return err
 	}
-	for _,v := range names {
+	for _, v := range names {
 		childpath := path.Join(dirpath, v)
 		fi, err := os.Lstat(childpath)
 		if err != nil {
@@ -104,7 +126,7 @@ func mkThumb(filepath string) os.Error {
 	args[3] = *thumbsize
 	args[4] = thumb
 	fds := []*os.File{os.Stdin, os.Stdout, os.Stderr}
-	p, err := os.StartProcess(args[0], args, os.Environ(), "", fds)
+	p, err := os.StartProcess(args[0], args, &os.ProcAttr{Files: fds})
 	if err != nil {
 		return err
 	}
@@ -119,7 +141,7 @@ func chkpicsdir() {
 	// fullpath for picsdir. must be within document root
 	*picsdir = path.Clean(*picsdir)
 	if (*picsdir)[0] != '/' {
-		cwd, _ := os.Getwd() 
+		cwd, _ := os.Getwd()
 		*picsdir = path.Join(cwd, *picsdir)
 	}
 	pathValidator := regexp.MustCompile(rootdir + ".*")
@@ -139,14 +161,14 @@ func chktmpl() {
 	// same drill for templates.
 	*tmpldir = path.Clean(*tmpldir)
 	if (*tmpldir)[0] != '/' {
-		cwd, _ := os.Getwd() 
+		cwd, _ := os.Getwd()
 		*tmpldir = path.Join(cwd, *tmpldir)
 	}
 	pathValidator := regexp.MustCompile(rootdir + ".*")
 	if !pathValidator.MatchString(*tmpldir) {
 		log.Fatal("tmpldir has to be a subdir of rootdir. (symlink ok)")
 	}
-	for _, tmpl := range []string{"tag", "pic", "tags", "upload"} {
+	for _, tmpl := range []string{tagName, picName, tagsName, upName} {
 		templates[tmpl] = template.MustParseFile(path.Join(*tmpldir, tmpl+".html"), nil)
 	}
 }
@@ -172,10 +194,10 @@ func errchk(err os.Error) {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: \n\t gogallery [-picsdir=\"dir\"] tag \n");
-	fmt.Fprintf(os.Stderr, "\t gogallery \n");
-	flag.PrintDefaults();
-	os.Exit(2);
+	fmt.Fprintf(os.Stderr, "usage: \n\t gogallery [-picsdir=\"dir\"] tag \n")
+	fmt.Fprintf(os.Stderr, "\t gogallery \n")
+	flag.PrintDefaults()
+	os.Exit(2)
 }
 
 func main() {
@@ -184,7 +206,7 @@ func main() {
 	if *help {
 		usage()
 	}
-	
+
 	chkpicsdir()
 
 	// tagging mode
@@ -209,9 +231,10 @@ func main() {
 		errchk(err)
 	}
 	setMaxId()
-	if len(*hostlisten) == 0 {
-		*hostlisten = *host
+	if *conffile != "" {
+		readEmailConf(*conffile)
 	}
+
 	http.HandleFunc(tagpattern, makeHandler(tagHandler))
 	http.HandleFunc(picpattern, makeHandler(picHandler))
 	http.HandleFunc(tagspattern, makeHandler(tagsHandler))
@@ -220,5 +243,5 @@ func main() {
 	http.HandleFunc("/prev", makeHandler(prevHandler))
 	http.HandleFunc(uploadpattern, makeHandler(uploadHandler))
 	http.HandleFunc("/", http.HandlerFunc(serveFile))
-	http.ListenAndServe(*hostlisten, nil)
+	http.ListenAndServe(*host, nil)
 }

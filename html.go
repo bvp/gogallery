@@ -7,14 +7,14 @@ import (
 )
 
 const basicTemplates = ".tmpl"
-const picTmpl= "pic.html"
-const tagTmpl= "tag.html"
-const tagsTmpl= "tags.html"
-const uploadTmpl= "upload.html"
+const tagName = "tag"
+const picName = "pic"
+const tagsName = "tags"
+const upName = "upload"
 
 //TODO: replace the hardcoded template names with the above const everywhere if possible
 var (
-pic_html = `
+	pic_html = `
 <div>
 <center>
 <table>
@@ -53,7 +53,7 @@ pic_html = `
 </div> 
 `
 
-tag_html = `
+	tag_html = `
 <h1><center>{Title}</center></h1>
 
 <div>
@@ -71,7 +71,7 @@ tag_html = `
 </div>
 `
 
-tags_html = `
+	tags_html   = `
 <h1><center>{Title}</center></h1>
 
 <div>
@@ -82,7 +82,7 @@ tags_html = `
 </center>
 </div>
 `
-upload_html = `
+	upload_html = `
 <div> 
 <center>
 <form action="{Upload}" enctype="multipart/form-data" method="post">
@@ -108,22 +108,22 @@ func mkTemplates(dirpath string) os.Error {
 	if err != nil {
 		return err
 	}
-	
+
 	if *norand {
 		randHtml := regexp.MustCompile(`<a href="http://{Host}/random">
 `)
-		pic_html = randHtml.ReplaceAllString(pic_html, 
-		`<a href="http://{Host}/{Title}">
+		pic_html = randHtml.ReplaceAllString(pic_html,
+			`<a href="http://{Host}/{Title}">
 `)
 	}
-	
-	tmpls := [][2]string{[2]string{pic_html, picTmpl}, [2]string{tag_html, tagTmpl}, [2]string{tags_html, tagsTmpl}, [2]string{upload_html, uploadTmpl}}
+
+	tmpls := [][2]string{[2]string{pic_html, picName + ".html"}, [2]string{tag_html, tagName + ".html"}, [2]string{tags_html, tagsName + ".html"}, [2]string{upload_html, upName + ".html"}}
 	for _, tmpl := range tmpls {
-		templ, err := os.Open(path.Join(dirpath, tmpl[1]), os.O_CREAT|os.O_WRONLY, 0644)
+		templ, err := os.Create(path.Join(dirpath, tmpl[1]))
 		if err != nil {
 			return err
 		}
-		_, err = templ.WriteString(tmpl[0]);
+		_, err = templ.WriteString(tmpl[0])
 		if err != nil {
 			return err
 		}
@@ -132,5 +132,5 @@ func mkTemplates(dirpath string) os.Error {
 			return err
 		}
 	}
-	return err		
+	return err
 }

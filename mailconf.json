@@ -1,0 +1,4 @@
+{"Server":"host:port",
+"From":"you@yourserver",
+"To":["you@someplaceelse","someoneelse@anotherplace"],
+"Message":"Subject: [gogallery] large upload notification"}
