@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"path/filepath"
 	"os"
 	"path"
 	"http"
@@ -21,11 +22,13 @@ const (
 	fileinform = "upload"
 	taginform = "tag"
 	idstring = "gogallery"
+	newtag = "newtag"
+	fullsize = "fullsize"
 )
 
 var (
 	fileServer = http.FileServer(rootdir, "")
-	titleValidator = regexp.MustCompile("^[a-zA-Z0-9]+$")
+	tagValidator = regexp.MustCompile("^([a-zA-Z0-9]|_|-)+$")
 	picValidator = regexp.MustCompile(".*(jpg|JPG|jpeg|JPEG|png|gif|GIF)$")
 	templates = make(map[string]*template.Template)
 )
@@ -51,16 +54,12 @@ func (p *lines) Write(line string) (n int, err os.Error) {
 
 type page struct {
 	Title	string
-	Host	string 
+	Host	string
 	Body	lines
-	Pic string 
-	Tags string 
-	Tag string 
-	Upload string
 }
 
 func newPage(title string, body lines) *page {
-	p := page{title, *host, body, picpattern, tagspattern, tagpattern, uploadpattern}
+	p := page{title, *host, body}
 	return &p
 }
 
@@ -76,9 +75,8 @@ func tagPage(tag string) *page {
 	for i := 0; i<len(pics); i++ {
 		dir, file := path.Split(pics[i])
 		thumb := path.Join(dir, thumbsDir, file)
-		pics[i] = "<a href=\"http://" + *host + picpattern +
-			pics[i] + "\"><img src=\"http://" + *host + "/" +
-			thumb + "\"/></a>"
+		pics[i] = "<a href=\"http://" + *host + path.Join(picpattern, tag, pics[i]) +
+			"\"><img src=\"http://" + *host + "/" + thumb + "\"/></a>"
 	}
 	return newPage(tag, pics)
 }
@@ -91,7 +89,7 @@ func tagsPage() *page {
 
 func tagHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	tag := urlpath[len(tagpattern):]
-	if !titleValidator.MatchString(tag) {
+	if !tagValidator.MatchString(tag) {
 		http.NotFound(w, r)
 		return
 	}
@@ -100,23 +98,52 @@ func tagHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 }
 
 func picHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
-	p := newPage(urlpath[len(picpattern):], nil)
+	if path.IsAbs(urlpath) {
+		urlpath = urlpath[1:]
+	}
+	words := strings.Split(urlpath, filepath.SeparatorString, -1)
+	pic := path.Join(words[2:]...)
+//	pic := urlpath[len(picpattern):]
 	err := r.ParseForm()
 	if err != nil {
 		http.Error(w, err.String(), http.StatusInternalServerError)
 		return
 	}
-	currentId = getCurrentId(p.Title)
 	// get new tag from POST
 	for k, v := range (*r).Form {
-		if k == "newtag" {
+		if k == newtag {
 			// only allow single alphanumeric word tag 
-			if titleValidator.MatchString(v[0]) {
-				insert(p.Title, v[0])
+			if tagValidator.MatchString(v[0]) {
+				insert(pic, v[0])
 			}
 			break
-    	}
+   		}
+		if k == fullsize {
+			picPath := path.Join("/", pic)
+			http.Redirect(w, r, picPath, http.StatusFound)
+		}
 	}	
+	
+//TODO: that will probably fail with concurrent clients, won't it?	
+	currentId = getCurrentId(pic)
+	dir, file := path.Split(pic)
+	resized := path.Join(dir, resizedDir, file)
+	if needResize(pic) {
+			mkResized(pic)
+	} else {
+//TODO: mv that to a global check ran once at the beginning, so that we don't recheck it everytime?
+		err := os.MkdirAll(path.Join(dir, resizedDir), 0755)
+		if err != nil {
+			http.Error(w, err.String(), http.StatusInternalServerError)
+		}	
+		err = os.Symlink(path.Join("..",file), resized)
+		if err != nil && err.(*os.LinkError).Error != os.EEXIST {
+//TODO: let it fail silently?
+			http.Error(w, err.String(), http.StatusInternalServerError)
+		}
+	}
+	picSrc := lines{resized}
+	p := newPage(path.Join(words[1], pic), picSrc)
 	renderTemplate(w, picName, p)
 }
 
@@ -127,15 +154,16 @@ func tagsHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 
 func randomHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	randId := rand.Intn(maxId) + 1
-	s := selectNext(randId)
+	s := getNextId(randId)
 	if s == "" {
-		s = selectPrev(randId)
+		maxId = randId
+		s = getPrevId(randId)
 	}
 	if s == "" {
 		http.NotFound(w, r)
 		return
 	}
-	s = picpattern + s
+	s = path.Join(picpattern, allPics, s)
 	http.Redirect(w, r, s, http.StatusFound)
 }
 
@@ -152,14 +180,20 @@ func nextHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 		http.NotFound(w, r)
 		return
 	}
-	prefix := len("http://" + *host + picpattern)
-	file := (*r).Referer[prefix:]
-	currentId = getCurrentId(file)
-	s := selectNext(currentId)
+	prefix := len("http://" + *host)
+	picPath := (*r).Referer[prefix:]
+	if path.IsAbs(picPath) {
+		picPath = picPath[1:]
+	}
+	words := strings.Split(picPath, filepath.SeparatorString, -1)
+	file := path.Join(words[2:]...)
+	tag := words[1]
+	s := getNext(file, tag)
 	if s == "" {
 		s = file
+		maxId = currentId
 	}
-	s = picpattern + s
+	s = path.Join(picpattern, tag, s)
 	http.Redirect(w, r, s, http.StatusFound)
 }
 
@@ -174,14 +208,19 @@ func prevHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 		http.NotFound(w, r)
 		return
 	}
-	prefix := len("http://" + *host + picpattern)
-	file := (*r).Referer[prefix:]
-	currentId = getCurrentId(file)
-	s := selectPrev(currentId)
+	prefix := len("http://" + *host)
+	picPath := (*r).Referer[prefix:]
+	if path.IsAbs(picPath) {
+		picPath = picPath[1:]
+	}
+	words := strings.Split(picPath, filepath.SeparatorString, -1)
+	file := path.Join(words[2:]...)
+	tag := words[1]
+	s := getPrev(file, tag)
 	if s == "" {
 		s = file
 	}
-	s = picpattern + s
+	s = path.Join(picpattern, tag, s)
 	http.Redirect(w, r, s, http.StatusFound)
 }
 
@@ -192,7 +231,8 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 
 	reader, err := r.MultipartReader()
 
-	// do nothing if no form	
+	// do nothing if no form
+//TODO: should I not look for the uploadpattern action string?
 	if err == nil {
 		for {
 			part, err := reader.NextPart()
@@ -250,12 +290,14 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 				// finally write the file
 				filepath = path.Join(filedir, filename)
 				err = ioutil.WriteFile(filepath, b.Bytes(), 0644)
+//				err = ioutil.WriteFile(filepath, upload, 0644)
 				if err != nil {
 					http.Error(w, err.String(), http.StatusInternalServerError)
 					return
 				}
 				p.Title = filename + ": upload sucessfull"
 				if tag != "" {
+					// tag is set, hence it has already been found 
 					break
 				}
 				continue
@@ -270,13 +312,14 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 					tag = string(b)
 				}
 				if p.Title != "" {
+					// Title is set, hence upload has already been done
 					break;
 				}
 			}
 		}
 		// only insert tag if we have an upload of a pic and a tag for it			
 		if tag != "" && p.Title != "" {
-			if titleValidator.MatchString(tag) && 
+			if tagValidator.MatchString(tag) && 
 				picValidator.MatchString(filepath) {
 				err = mkThumb(filepath)
 				if err != nil {
@@ -287,7 +330,6 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 			}
 		}
 	}
-		
 	renderTemplate(w, upName, p)
 }
 

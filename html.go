@@ -12,7 +12,6 @@ const picName = "pic"
 const tagsName = "tags"
 const upName = "upload"
 
-//TODO: replace the hardcoded template names with the above const everywhere if possible
 var (
 	pic_html = `
 <div>
@@ -23,7 +22,7 @@ var (
 <a href="http://{Host}/prev"> prev </a>
 </td>
 <td>
-<a href="http://{Host}{Tags}"> tags </a>
+<a href="http://{Host}` + tagspattern + `"> tags </a>
 </td>
 <td>
 <a href="http://{Host}/random"> rand </a>
@@ -38,18 +37,22 @@ var (
 <div>
 <center>
 <a href="http://{Host}/random">
-<img src="http://{Host}/{Title}" alt="{Title}" />
+<img src="http://{Host}/{.repeated section Body}{@}{.end}" alt="{Title}" />
 </a>
 </center>
 </div>
 
 <div> 
 <center>
-<form action="{Pic}{Title}" method="post"> 
-<input type="text" name="newtag"/> 
+<form action="` + picpattern + `{Title}" method="post"> 
+<input type="text" name="` + newtag + `"/> 
 <input type="submit" value="Tag!"> 
+</form>
+<form action="` + picpattern + `{Title}" method="post"> 
+<input type="hidden" name="` + fullsize + `"/> 
+<input type="submit" value="Full size">
+</form>
 </center>
-</form> 
 </div> 
 `
 
@@ -58,7 +61,7 @@ var (
 
 <div>
 <center>
-<a href="http://{Host}{Tags}"> tags </a>
+<a href="http://{Host}` + tagspattern + `"> tags </a>
 </center>
 </div>
 
@@ -77,22 +80,32 @@ var (
 <div>
 <center>
 {.repeated section Body}
-<a href="http://{Host}{Tag}{@}">{@}</a>
+<a href="http://{Host}` + tagpattern + `{@}">{@}</a>
 {.end}
 </center>
 </div>
 `
+//TODO: more suitable name for input submit below? probably no?
 	upload_html = `
+
 <div> 
 <center>
-<form action="{Upload}" enctype="multipart/form-data" method="post">
+<p>
+Upload and optionally tag a file
+</p>
+</center>
+</div>
+
+<div> 
+<center>
+<form action=` + uploadpattern + ` enctype="multipart/form-data" method="post">
 Upload <input type="file" name="upload" size="40"> <br>
 Tag <input type="text" name="tag" size="30"> <br>
-<input name="submit" value="submit" type="submit"><input type="reset">
-</center>
+<input type="submit" value="Upload" >
 </form> 
+</center>
 </div>
- 
+
 <div> 
 <center>
 <p>
@@ -100,6 +113,7 @@ Tag <input type="text" name="tag" size="30"> <br>
 </p>
 </center>
 </div>
+
 `
 )
 

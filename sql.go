@@ -9,6 +9,7 @@ import (
 )
 
 //TODO: sql constraints on the id
+//TODO: sanitize against injections?
 
 var (
 	db *sqlite.Conn
@@ -23,7 +24,7 @@ func initDb() {
 	db.Exec("drop table tags")
 	errchk(db.Exec(
 		"create table tags (id integer primary key, file text, tag text)"))
-	errchk(scanDir(*picsdir, "all"))
+	errchk(scanDir(*picsdir, allPics))
 	log.Print("Scanning of " + *picsdir + " complete.")
 }
 
@@ -47,7 +48,61 @@ func insert(filepath string, tag string) {
 	maxId++;
 }
 
-func selectNext(id int) string {
+//TODO: notify the server to reset maxId
+func delete(tag string) {
+	err := db.Exec(
+		`delete from tags where tag="`+ tag + `"`)
+	errchk(err)
+}
+
+func getNext(pic string, tag string) string {
+	// use >= and limit to dodge fragmentation issues
+	stmt, err := db.Prepare(
+		`select file, tag from tags where id > ` +  
+		`(select id from tags where file = '` + pic +
+		`' and tag = '` + tag + `')` + 
+		" order by tag, id asc limit 1")
+	errchk(err)
+
+	s := ""
+	s2 := ""
+	errchk(stmt.Exec())
+	if stmt.Next() {
+		errchk(stmt.Scan(&s, &s2))
+	}
+	if s2 != tag {
+		// we reached the end of this tag's group
+		return pic
+	}
+	stmt.Finalize()
+	return s
+}
+
+func getPrev(pic string, tag string) string {
+	// use <= and limit to dodge fragmentation issues
+	stmt, err := db.Prepare(
+		"select file, tag from tags where id < " +  
+		"(select id from tags where file = '" + pic +
+		"' and tag = '" + tag + "')" + 
+		" order by tag, id desc limit 1")
+	errchk(err)
+
+	s := ""
+	s2 := ""
+	errchk(stmt.Exec())
+	if stmt.Next() {
+		errchk(stmt.Scan(&s, &s2))
+	}
+	if s2 != tag {
+		// we reached the beginning of this tag's group
+		return pic
+	}	
+	stmt.Finalize()
+	println(s)
+	return s
+}
+
+func getNextId(id int) string {
 	// use >= and limit to dodge fragmentation issues
 	stmt, err := db.Prepare(
 		"select file from tags where id > " + fmt.Sprint(id) +
@@ -63,7 +118,7 @@ func selectNext(id int) string {
 	return s
 }
 
-func selectPrev(id int) string {
+func getPrevId(id int) string {
 	// use <= and limit to dodge fragmentation issues
 	stmt, err := db.Prepare(
 		"select file from tags where id < " + fmt.Sprint(id) +
@@ -93,8 +148,6 @@ func getCurrentId(filepath string) int {
 }
 
 func setMaxId() {
-	// if we ever start to delete entries, max() won't work anymore.
-	// then use a count.
 	// check db sanity
 	stmt, err := db.Prepare("select count(id) from tags")
 	errchk(err)
