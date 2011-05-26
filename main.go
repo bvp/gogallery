@@ -4,10 +4,14 @@ import (
 	"flag"
 	"fmt"
 	"http"
+	"image"
+	"image/png"
+	"image/jpeg"
 	"json"
 	"log"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -16,19 +20,32 @@ import (
 	sqlite "gosqlite.googlecode.com/hg/sqlite"
 )
 
-const thumbsDir = ".thumbs"
-const picpattern = "/pic/"
-const tagpattern = "/tag/"
-const tagspattern = "/tags"
-// security through obscurity for now; just don't advertize your uploadpattern if you don't want others to upload to your server
-const uploadpattern = "/upload"
+//TODO: enable/disable public tags? auth?
+//TODO: mv rest of the flags to the json conf file?
+//TODO: add last selected tag (and all tags) as a link?
+//TODO: cloud of tags? variable font size?
+//TODO: preload all the picsPaths for a given tag?
 
-//TODO: allow _ and - in tagnames
+const (
+	thumbsDir = ".thumbs"
+	resizedDir = ".resized"
+	picpattern = "/pic/"
+	tagpattern = "/tag/"
+	tagspattern = "/tags"
+// security through obscurity for now; just don't advertize your uploadpattern if you don't want others to upload to your server
+	uploadpattern = "/upload"
+	allPics = "all"
+)
+
 var (
 	rootdir, _ = os.Getwd()
 	rootdirlen = len(rootdir)
 	conf emailConf
-	// command flags 
+	//TODO: derive from a geometry
+	maxWidth = 800
+	maxHeight = 600
+)
+var (
 	dbfile     = flag.String("dbfile", "./gallery.db", "File to store the db")
 	conffile = flag.String("conf", "", "json conf file to send email alerts")
 	host       = flag.String("host", "localhost:8080", "listening port and hostname that will appear in the urls")
@@ -91,7 +108,7 @@ func scanDir(dirpath string, tag string) os.Error {
 		if err != nil {
 			return err
 		}
-		if fi.IsDirectory() && v != thumbsDir {
+		if fi.IsDirectory() && v != thumbsDir && v != resizedDir {
 			err = scanDir(childpath, tag)
 			if err != nil {
 				return err
@@ -125,6 +142,57 @@ func mkThumb(filepath string) os.Error {
 	args[2] = "-thumbnail"
 	args[3] = *thumbsize
 	args[4] = thumb
+	fds := []*os.File{os.Stdin, os.Stdout, os.Stderr}
+	p, err := os.StartProcess(args[0], args, &os.ProcAttr{Files: fds})
+	if err != nil {
+		return err
+	}
+	_, err = os.Wait(p.Pid, os.WSTOPPED)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+//TODO: mv to an image.go file
+func needResize(pic string) bool {
+	var err os.Error
+	var im image.Image
+	f, err := os.Open(pic)
+	if err != nil {
+		log.Fatal(err)
+	}
+	switch filepath.Ext(pic) {
+	case ".png":
+		im, err = png.Decode(f)
+	case ".jpeg", ".jpg":
+		im, err = jpeg.Decode(f)
+	default:
+		log.Print("unsupported image file: ", filepath.Ext(pic))
+		return false
+	}
+	if err != nil {
+//TODO: not fatal
+		log.Fatal(err)
+	}
+	w := im.Bounds().Dx()
+	h := im.Bounds().Dy()
+	return w > maxWidth || h > maxHeight
+}
+
+// we can use convert -resize/-scale because, like -thumbnail, they conserve proportions 
+func mkResized(pic string) os.Error {
+	dir, file := path.Split(pic)
+	resized := path.Join(dir, resizedDir, file)
+	_, err := os.Stat(resized)
+	if err == nil {
+		return nil
+	}
+	err = os.MkdirAll(path.Join(dir, resizedDir), 0755)
+	if err != nil {
+		return err
+	}	
+	args := []string{"/usr/bin/convert", pic, "-resize", "800x600", resized}
 	fds := []*os.File{os.Stdin, os.Stdout, os.Stderr}
 	p, err := os.StartProcess(args[0], args, &os.ProcAttr{Files: fds})
 	if err != nil {
@@ -194,7 +262,8 @@ func errchk(err os.Error) {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: \n\t gogallery [-picsdir=\"dir\"] tag \n")
+	fmt.Fprintf(os.Stderr, "usage: \n\t gogallery [-picsdir=\"dir\"] [-dbfile=\"file\"] tag tagname\n")
+	fmt.Fprintf(os.Stderr, "usage: \n\t gogallery [-dbfile=\"file\"] deltag tagname \n")
 	fmt.Fprintf(os.Stderr, "\t gogallery \n")
 	flag.PrintDefaults()
 	os.Exit(2)
@@ -209,15 +278,30 @@ func main() {
 
 	chkpicsdir()
 
-	// tagging mode
-	if flag.NArg() > 0 {
-		tag := flag.Args()[0]
+	// tag or del cmds 
+	nargs := flag.NArg()
+	if nargs > 0 {
+		if nargs < 2 {
+			usage()
+		}
 		var err os.Error
-		db, err = sqlite.Open(*dbfile)
-		errchk(err)
-		errchk(scanDir(*picsdir, tag))
-		log.Print("Scanning of " + *picsdir + " complete.")
-		db.Close()
+		cmd := flag.Args()[0]
+		switch cmd {
+		case "tag":
+//why the smeg can't I use := here? 
+			db, err = sqlite.Open(*dbfile)
+			errchk(err)
+			errchk(scanDir(*picsdir, flag.Args()[1]))
+			log.Print("Scanning of " + *picsdir + " complete.")
+			db.Close()
+		case "deltag":
+			db, err = sqlite.Open(*dbfile)
+			errchk(err)
+			delete(flag.Args()[1])
+			db.Close()
+		default:
+			usage()		
+		}
 		return
 	}
 
