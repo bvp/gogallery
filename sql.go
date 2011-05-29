@@ -19,13 +19,13 @@ var (
 
 func initDb() {
 	var err os.Error
-	db, err = sqlite.Open(*dbfile)
+	db, err = sqlite.Open(config.Dbfile)
 	errchk(err)
 	db.Exec("drop table tags")
 	errchk(db.Exec(
 		"create table tags (id integer primary key, file text, tag text)"))
-	errchk(scanDir(*picsdir, allPics))
-	log.Print("Scanning of " + *picsdir + " complete.")
+	errchk(scanDir(config.Picsdir, allPics))
+	log.Print("Scanning of " + config.Picsdir + " complete.")
 }
 
 //TODO: if insert stmt returns the id, use that to set maxId

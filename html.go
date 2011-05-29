@@ -123,7 +123,7 @@ func mkTemplates(dirpath string) os.Error {
 		return err
 	}
 
-	if *norand {
+	if config.Norand {
 		randHtml := regexp.MustCompile(`<a href="http://{Host}/random">
 `)
 		pic_html = randHtml.ReplaceAllString(pic_html,
