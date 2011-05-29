@@ -268,14 +268,14 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 					return
 				}
 				if n > largeupload && *conffile != "" {
-					err = smtp.SendMail(conf.Server, nil, conf.From, conf.To, []byte(conf.Message))
+					err = smtp.SendMail(config.Email.Server, nil, config.Email.From, config.Email.To, []byte(config.Email.Message))
 					if err != nil {
 						http.Error(w, err.String(), http.StatusInternalServerError)
 						return 
 					}
 				}
 				// write file in dir with YYYY-MM-DD format
-				filedir := path.Join(*picsdir, time.UTC().Format("2006-01-02"))
+				filedir := path.Join(config.Picsdir, time.UTC().Format("2006-01-02"))
 				err = mkdir(filedir)
 				if err != nil {
 					http.Error(w, err.String(), http.StatusInternalServerError)

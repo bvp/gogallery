@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"template"
@@ -21,7 +22,6 @@ import (
 )
 
 //TODO: enable/disable public tags? auth?
-//TODO: mv rest of the flags to the json conf file?
 //TODO: add last selected tag (and all tags) as a link?
 //TODO: cloud of tags? variable font size?
 //TODO: preload all the picsPaths for a given tag?
@@ -40,22 +40,35 @@ const (
 var (
 	rootdir, _ = os.Getwd()
 	rootdirlen = len(rootdir)
-	conf emailConf
+	config conf = conf{
+		Dbfile: "./gallery.db",
+		Initdb: false,
+		Picsdir: "./",
+		Thumbsize: "200x300",
+		Normalsize: "800x600",
+		Tmpldir: "",
+		Norand: false}
 	//TODO: derive from a geometry
-	maxWidth = 800
-	maxHeight = 600
+	maxWidth int
+	maxHeight int
 )
+
 var (
-	dbfile     = flag.String("dbfile", "./gallery.db", "File to store the db")
 	conffile = flag.String("conf", "", "json conf file to send email alerts")
 	host       = flag.String("host", "localhost:8080", "listening port and hostname that will appear in the urls")
-	initdb     = flag.Bool("init", false, "clean out the db file and start from scratch")
-	picsdir    = flag.String("picsdir", "./", "Root dir for all the pics")
-	thumbsize  = flag.String("thumbsize", "200x300", "size of the thumbnails")
-	tmpldir    = flag.String("tmpldir", "", "dir for the templates. generates basic ones in "+basicTemplates+" by default")
-	norand     = flag.Bool("norand", false, "disable random for when clicking on image")
 	help       = flag.Bool("h", false, "show this help")
 )
+
+type conf struct {
+	Email emailConf
+	Dbfile string
+	Initdb bool
+	Picsdir string
+	Thumbsize string
+	Normalsize string
+	Tmpldir string
+	Norand bool
+}
 
 type emailConf struct {
 	Server string
@@ -64,17 +77,27 @@ type emailConf struct {
 	Message string
 }
 
-func readEmailConf(confFile string) {
+func readConf(confFile string) os.Error {
 	r, err := os.Open(confFile)
 	if err != nil {
 		log.Fatal(err)
 	}
 	dec := json.NewDecoder(r)
-	err = dec.Decode(&conf)
+	err = dec.Decode(&config)
 	if err != nil {
 		log.Fatal(err)
 	}
 	r.Close()
+	fmt.Printf("%v \n", config)
+	sizes := strings.Split(config.Normalsize, "x", -1)
+	if len(sizes) != 2 { 
+		return os.NewError("Invalid Normalsize value \n")
+	}
+	maxWidth, err = strconv.Atoi(sizes[0])
+	errchk(err)
+	maxHeight, err = strconv.Atoi(sizes[1])
+	errchk(err)
+	return nil
 }
 
 func mkdir(dirpath string) os.Error {
@@ -140,7 +163,7 @@ func mkThumb(filepath string) os.Error {
 	args[0] = "/usr/bin/convert"
 	args[1] = filepath
 	args[2] = "-thumbnail"
-	args[3] = *thumbsize
+	args[3] = config.Thumbsize
 	args[4] = thumb
 	fds := []*os.File{os.Stdin, os.Stdout, os.Stderr}
 	p, err := os.StartProcess(args[0], args, &os.ProcAttr{Files: fds})
@@ -192,7 +215,7 @@ func mkResized(pic string) os.Error {
 	if err != nil {
 		return err
 	}	
-	args := []string{"/usr/bin/convert", pic, "-resize", "800x600", resized}
+	args := []string{"/usr/bin/convert", pic, "-resize", config.Normalsize, resized}
 	fds := []*os.File{os.Stdin, os.Stdout, os.Stderr}
 	p, err := os.StartProcess(args[0], args, &os.ProcAttr{Files: fds})
 	if err != nil {
@@ -207,37 +230,37 @@ func mkResized(pic string) os.Error {
 
 func chkpicsdir() {
 	// fullpath for picsdir. must be within document root
-	*picsdir = path.Clean(*picsdir)
-	if (*picsdir)[0] != '/' {
+	config.Picsdir = path.Clean(config.Picsdir)
+	if (config.Picsdir)[0] != '/' {
 		cwd, _ := os.Getwd()
-		*picsdir = path.Join(cwd, *picsdir)
+		config.Picsdir = path.Join(cwd, config.Picsdir)
 	}
 	pathValidator := regexp.MustCompile(rootdir + ".*")
-	if !pathValidator.MatchString(*picsdir) {
+	if !pathValidator.MatchString(config.Picsdir) {
 		log.Fatal("picsdir has to be a subdir of rootdir. (symlink ok)")
 	}
 }
 
 func chktmpl() {
-	if *tmpldir == "" {
-		*tmpldir = basicTemplates
-		err := mkTemplates(*tmpldir)
+	if config.Tmpldir == "" {
+		config.Tmpldir = basicTemplates
+		err := mkTemplates(config.Tmpldir)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
 	// same drill for templates.
-	*tmpldir = path.Clean(*tmpldir)
-	if (*tmpldir)[0] != '/' {
+	config.Tmpldir = path.Clean(config.Tmpldir)
+	if (config.Tmpldir)[0] != '/' {
 		cwd, _ := os.Getwd()
-		*tmpldir = path.Join(cwd, *tmpldir)
+		config.Tmpldir = path.Join(cwd, config.Tmpldir)
 	}
 	pathValidator := regexp.MustCompile(rootdir + ".*")
-	if !pathValidator.MatchString(*tmpldir) {
+	if !pathValidator.MatchString(config.Tmpldir) {
 		log.Fatal("tmpldir has to be a subdir of rootdir. (symlink ok)")
 	}
 	for _, tmpl := range []string{tagName, picName, tagsName, upName} {
-		templates[tmpl] = template.MustParseFile(path.Join(*tmpldir, tmpl+".html"), nil)
+		templates[tmpl] = template.MustParseFile(path.Join(config.Tmpldir, tmpl+".html"), nil)
 	}
 }
 
@@ -276,6 +299,9 @@ func main() {
 		usage()
 	}
 
+	if *conffile != "" {
+		errchk(readConf(*conffile))
+	}
 	chkpicsdir()
 
 	// tag or del cmds 
@@ -289,13 +315,13 @@ func main() {
 		switch cmd {
 		case "tag":
 //why the smeg can't I use := here? 
-			db, err = sqlite.Open(*dbfile)
+			db, err = sqlite.Open(config.Dbfile)
 			errchk(err)
-			errchk(scanDir(*picsdir, flag.Args()[1]))
-			log.Print("Scanning of " + *picsdir + " complete.")
+			errchk(scanDir(config.Picsdir, flag.Args()[1]))
+			log.Print("Scanning of " + config.Picsdir + " complete.")
 			db.Close()
 		case "deltag":
-			db, err = sqlite.Open(*dbfile)
+			db, err = sqlite.Open(config.Dbfile)
 			errchk(err)
 			delete(flag.Args()[1])
 			db.Close()
@@ -307,17 +333,14 @@ func main() {
 
 	// web server mode
 	chktmpl()
-	if *initdb {
+	if config.Initdb {
 		initDb()
 	} else {
 		var err os.Error
-		db, err = sqlite.Open(*dbfile)
+		db, err = sqlite.Open(config.Dbfile)
 		errchk(err)
 	}
 	setMaxId()
-	if *conffile != "" {
-		readEmailConf(*conffile)
-	}
 
 	http.HandleFunc(tagpattern, makeHandler(tagHandler))
 	http.HandleFunc(picpattern, makeHandler(picHandler))
