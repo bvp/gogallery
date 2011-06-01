@@ -4,14 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"http"
-	"image"
-	"image/png"
-	"image/jpeg"
+	"io/ioutil"
 	"json"
 	"log"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -21,6 +18,7 @@ import (
 	sqlite "gosqlite.googlecode.com/hg/sqlite"
 )
 
+//TODO: clean command to remove .thumbs or .resized
 //TODO: enable/disable public tags? auth?
 //TODO: add last selected tag (and all tags) as a link?
 //TODO: cloud of tags? variable font size?
@@ -177,29 +175,41 @@ func mkThumb(filepath string) os.Error {
 	return nil
 }
 
+//TODO: look for identify path
 //TODO: mv to an image.go file
+//TODO: use native go stuff to do the job when it's ready. as of 05/2011, at least decoding jpeg is pretty unreliable.
 func needResize(pic string) bool {
-	var err os.Error
-	var im image.Image
-	f, err := os.Open(pic)
+	pr, pw, err := os.Pipe()
 	if err != nil {
 		log.Fatal(err)
 	}
-	switch filepath.Ext(pic) {
-	case ".png":
-		im, err = png.Decode(f)
-	case ".jpeg", ".jpg":
-		im, err = jpeg.Decode(f)
-	default:
-		log.Print("unsupported image file: ", filepath.Ext(pic))
-		return false
-	}
+	args := []string{"/usr/bin/identify", pic}
+	fds := []*os.File{os.Stdin, pw, os.Stderr}
+	p, err := os.StartProcess(args[0], args, &os.ProcAttr{Files: fds})
 	if err != nil {
-//TODO: not fatal
 		log.Fatal(err)
 	}
-	w := im.Bounds().Dx()
-	h := im.Bounds().Dy()
+	pw.Close()
+	_, err = os.Wait(p.Pid, os.WSTOPPED)
+	if err != nil {
+		log.Fatal(err)
+	}
+	buf, err := ioutil.ReadAll(pr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	pr.Close()
+	output := strings.Split(string(buf), " ", -1)
+	// resolution should be the 3rd one of the output of identify
+	res := strings.Split(output[2], "x", -1)
+	w, err := strconv.Atoi(res[0])
+	if err != nil {
+		log.Fatal(err)
+	}
+	h, err := strconv.Atoi(res[1])
+	if err != nil {
+		log.Fatal(err)
+	}
 	return w > maxWidth || h > maxHeight
 }
 
@@ -285,8 +295,8 @@ func errchk(err os.Error) {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: \n\t gogallery [-picsdir=\"dir\"] [-dbfile=\"file\"] tag tagname\n")
-	fmt.Fprintf(os.Stderr, "usage: \n\t gogallery [-dbfile=\"file\"] deltag tagname \n")
+	fmt.Fprintf(os.Stderr, "usage: \n\t gogallery tag dir tagname\n")
+	fmt.Fprintf(os.Stderr, "\t gogallery deltag tagname \n")
 	fmt.Fprintf(os.Stderr, "\t gogallery \n")
 	flag.PrintDefaults()
 	os.Exit(2)
@@ -314,10 +324,16 @@ func main() {
 		cmd := flag.Args()[0]
 		switch cmd {
 		case "tag":
+			if nargs < 3 {
+				usage()
+			}
 //why the smeg can't I use := here? 
 			db, err = sqlite.Open(config.Dbfile)
 			errchk(err)
-			errchk(scanDir(config.Picsdir, flag.Args()[1]))
+			config.Picsdir = flag.Args()[1]
+			chkpicsdir()
+			tag := flag.Args()[2]
+			errchk(scanDir(config.Picsdir, tag))
 			log.Print("Scanning of " + config.Picsdir + " complete.")
 			db.Close()
 		case "deltag":
