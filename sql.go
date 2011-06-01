@@ -55,13 +55,14 @@ func delete(tag string) {
 	errchk(err)
 }
 
+//TODO: better sql with less redundancy?
 func getNext(pic string, tag string) string {
 	// use >= and limit to dodge fragmentation issues
 	stmt, err := db.Prepare(
 		`select file, tag from tags where id > ` +  
 		`(select id from tags where file = '` + pic +
 		`' and tag = '` + tag + `')` + 
-		" order by tag, id asc limit 1")
+		" and tag = '" + tag + "' order by id asc limit 1")
 	errchk(err)
 
 	s := ""
@@ -78,13 +79,14 @@ func getNext(pic string, tag string) string {
 	return s
 }
 
+//TODO: better sql with less redundancy?
 func getPrev(pic string, tag string) string {
 	// use <= and limit to dodge fragmentation issues
 	stmt, err := db.Prepare(
 		"select file, tag from tags where id < " +  
 		"(select id from tags where file = '" + pic +
 		"' and tag = '" + tag + "')" + 
-		" order by tag, id desc limit 1")
+		" and tag = '" + tag + "' order by id desc limit 1")
 	errchk(err)
 
 	s := ""
