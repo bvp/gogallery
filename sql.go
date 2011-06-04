@@ -14,7 +14,6 @@ import (
 var (
 	db *sqlite.Conn
 	maxId = 0
-	currentId = maxId
 )
 
 func initDb() {
@@ -100,7 +99,6 @@ func getPrev(pic string, tag string) string {
 		return pic
 	}	
 	stmt.Finalize()
-	println(s)
 	return s
 }
 

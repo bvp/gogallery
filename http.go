@@ -28,7 +28,8 @@ const (
 
 var (
 	fileServer = http.FileServer(rootdir, "")
-	tagValidator = regexp.MustCompile("^([a-zA-Z0-9]|_|-)+$")
+//TODO: since I had to accept % escapes for accented chars, it does not prevent spaces anymore. 
+	tagValidator = regexp.MustCompile("^([a-zA-Z0-9]|_|-|%)+$")
 	picValidator = regexp.MustCompile(".*(jpg|JPG|jpeg|JPEG|png|gif|GIF)$")
 	templates = make(map[string]*template.Template)
 )
@@ -89,7 +90,7 @@ func tagsPage() *page {
 
 func tagHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	tag := urlpath[len(tagpattern):]
-	if !tagValidator.MatchString(tag) {
+	if !tagValidator.MatchString(http.URLEscape(tag)) {
 		http.NotFound(w, r)
 		return
 	}
@@ -113,8 +114,10 @@ func picHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	for k, v := range (*r).Form {
 		if k == newtag {
 			// only allow single alphanumeric word tag 
-			if tagValidator.MatchString(v[0]) {
+			if tagValidator.MatchString(http.URLEscape(v[0])) {
+				m.Lock()
 				insert(pic, v[0])
+				m.Unlock()
 			}
 			break
    		}
@@ -124,8 +127,6 @@ func picHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 		}
 	}	
 	
-//TODO: that will probably fail with concurrent clients, won't it?	
-	currentId = getCurrentId(pic)
 	dir, file := path.Split(pic)
 	resized := path.Join(dir, resizedDir, file)
 	if needResize(pic) {
@@ -186,12 +187,19 @@ func nextHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 		picPath = picPath[1:]
 	}
 	words := strings.Split(picPath, filepath.SeparatorString, -1)
-	file := path.Join(words[2:]...)
-	tag := words[1]
+	file, err := http.URLUnescape(path.Join(words[2:]...))
+	if err != nil {
+		http.Error(w, err.String(), http.StatusInternalServerError)
+		return
+	}
+	tag, err := http.URLUnescape(words[1])
+	if err != nil {
+		http.Error(w, err.String(), http.StatusInternalServerError)
+		return
+	}
 	s := getNext(file, tag)
 	if s == "" {
 		s = file
-		maxId = currentId
 	}
 	s = path.Join(picpattern, tag, s)
 	http.Redirect(w, r, s, http.StatusFound)
@@ -214,8 +222,16 @@ func prevHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 		picPath = picPath[1:]
 	}
 	words := strings.Split(picPath, filepath.SeparatorString, -1)
-	file := path.Join(words[2:]...)
-	tag := words[1]
+	file, err := http.URLUnescape(path.Join(words[2:]...))
+	if err != nil {
+		http.Error(w, err.String(), http.StatusInternalServerError)
+		return
+	}
+	tag, err := http.URLUnescape(words[1])
+	if err != nil {
+		http.Error(w, err.String(), http.StatusInternalServerError)
+		return
+	}
 	s := getPrev(file, tag)
 	if s == "" {
 		s = file
@@ -319,14 +335,16 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 		}
 		// only insert tag if we have an upload of a pic and a tag for it			
 		if tag != "" && p.Title != "" {
-			if tagValidator.MatchString(tag) && 
+			if tagValidator.MatchString(http.URLEscape(tag)) && 
 				picValidator.MatchString(filepath) {
 				err = mkThumb(filepath)
 				if err != nil {
 					http.Error(w, err.String(), http.StatusInternalServerError)
 					return 
 				}
+				m.Lock()
 				insert(filepath[rootdirlen+1:], tag)
+				m.Unlock()
 			}
 		}
 	}
