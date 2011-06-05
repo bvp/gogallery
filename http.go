@@ -34,6 +34,11 @@ var (
 	templates = make(map[string]*template.Template)
 )
 
+var (
+    errPassRequired = os.NewError("Password required for this operation")
+	errLargeUpload = os.NewError("Upload too large")
+)
+
 type lines []string
 
 func (p *lines) Write(line string) (n int, err os.Error) {
@@ -64,11 +69,15 @@ func newPage(title string, body lines) *page {
 	return &p
 }
 
+func httpErr(err os.Error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
 func renderTemplate(w http.ResponseWriter, tmpl string, p *page) {
 	err := templates[tmpl].Execute(w, p)
-	if err != nil {
-		http.Error(w, err.String(), http.StatusInternalServerError)
-	}
+	httpErr(err)
 }
 
 func tagPage(tag string) *page {
@@ -106,26 +115,49 @@ func picHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	pic := path.Join(words[2:]...)
 //	pic := urlpath[len(picpattern):]
 	err := r.ParseForm()
-	if err != nil {
-		http.Error(w, err.String(), http.StatusInternalServerError)
-		return
-	}
+	httpErr(err)
+
 	// get new tag from POST
+	inputTag := ""
+	inputPass := ""
 	for k, v := range (*r).Form {
-		if k == newtag {
+//		println(k)
+//		for _,y := range (v) {
+//			println(y)
+//		}
+		switch k {
+		case newtag:
 			// only allow single alphanumeric word tag 
 			if tagValidator.MatchString(http.URLEscape(v[0])) {
-				m.Lock()
-				insert(pic, v[0])
-				m.Unlock()
+				inputTag = v[0]
+				if inputPass != "" {
+					if !needPass || passOk(inputPass)  {
+						m.Lock()
+						insert(pic, inputTag)
+						m.Unlock()
+					} else {
+						err = errPassRequired
+						httpErr(err)
+					}
+				}
 			}
-			break
-   		}
-		if k == fullsize {
+		case "password":
+			inputPass = v[0]
+			if inputTag != "" {
+				if !needPass || passOk(inputPass) {
+					m.Lock()
+					insert(pic, inputTag)
+					m.Unlock()
+				} else {
+					err = errPassRequired
+					httpErr(err)
+				}
+			} 
+   		case fullsize:
 			picPath := path.Join("/", pic)
 			http.Redirect(w, r, picPath, http.StatusFound)
 		}
-	}	
+	}
 	
 	dir, file := path.Split(pic)
 	resized := path.Join(dir, resizedDir, file)
@@ -134,9 +166,8 @@ func picHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	} else {
 //TODO: mv that to a global check ran once at the beginning, so that we don't recheck it everytime?
 		err := os.MkdirAll(path.Join(dir, resizedDir), 0755)
-		if err != nil {
-			http.Error(w, err.String(), http.StatusInternalServerError)
-		}	
+		httpErr(err)
+
 		err = os.Symlink(path.Join("..",file), resized)
 		if err != nil && err.(*os.LinkError).Error != os.EEXIST {
 //TODO: let it fail silently?
@@ -172,10 +203,8 @@ func randomHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 func nextHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	ok, err := regexp.MatchString(
 		"^http://"+*host+picpattern+".*$", (*r).Referer)
-	if err != nil {
-		http.Error(w, err.String(), http.StatusInternalServerError)
-		return
-	}
+	httpErr(err)
+
 //TODO: maybe print the 1st one instead of a 404 ?
 	if !ok {		
 		http.NotFound(w, r)
@@ -188,15 +217,11 @@ func nextHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	}
 	words := strings.Split(picPath, filepath.SeparatorString, -1)
 	file, err := http.URLUnescape(path.Join(words[2:]...))
-	if err != nil {
-		http.Error(w, err.String(), http.StatusInternalServerError)
-		return
-	}
+	httpErr(err)
+
 	tag, err := http.URLUnescape(words[1])
-	if err != nil {
-		http.Error(w, err.String(), http.StatusInternalServerError)
-		return
-	}
+	httpErr(err)
+
 	s := getNext(file, tag)
 	if s == "" {
 		s = file
@@ -208,10 +233,8 @@ func nextHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 func prevHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	ok, err := regexp.MatchString(
 		"^http://"+*host+picpattern+".*$", (*r).Referer)
-	if err != nil {
-		http.Error(w, err.String(), http.StatusInternalServerError)
-		return
-	}
+	httpErr(err)
+
 	if !ok {		
 		http.NotFound(w, r)
 		return
@@ -223,15 +246,11 @@ func prevHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	}
 	words := strings.Split(picPath, filepath.SeparatorString, -1)
 	file, err := http.URLUnescape(path.Join(words[2:]...))
-	if err != nil {
-		http.Error(w, err.String(), http.StatusInternalServerError)
-		return
-	}
+	httpErr(err)
+
 	tag, err := http.URLUnescape(words[1])
-	if err != nil {
-		http.Error(w, err.String(), http.StatusInternalServerError)
-		return
-	}
+	httpErr(err)
+
 	s := getPrev(file, tag)
 	if s == "" {
 		s = file
@@ -252,10 +271,8 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	if err == nil {
 		for {
 			part, err := reader.NextPart()
-			if err != nil {
-				http.Error(w, err.String(), http.StatusInternalServerError)
-				return
-			}
+			httpErr(err)
+
 			if part == nil {
 				break
 			}
@@ -279,38 +296,25 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 					}
 				}
 				if n > maxupload {
-					err = os.NewError("upload too large")
-					http.Error(w, err.String(), http.StatusInternalServerError)
-					return
+					err = errLargeUpload
+					panic(err)
 				}
 				if n > largeupload && *conffile != "" {
 					err = smtp.SendMail(config.Email.Server, nil, config.Email.From, config.Email.To, []byte(config.Email.Message))
-					if err != nil {
-						http.Error(w, err.String(), http.StatusInternalServerError)
-						return 
-					}
+					httpErr(err)
 				}
 				// write file in dir with YYYY-MM-DD format
 				filedir := path.Join(config.Picsdir, time.UTC().Format("2006-01-02"))
 				err = mkdir(filedir)
-				if err != nil {
-					http.Error(w, err.String(), http.StatusInternalServerError)
-					return
-				}
+				httpErr(err)
 				// create thumbsdir while we're at it
 				err = mkdir(path.Join(filedir, thumbsDir))
-				if err != nil {
-					http.Error(w, err.String(), http.StatusInternalServerError)
-					return
-				}
+				httpErr(err)
 				// finally write the file
 				filepath = path.Join(filedir, filename)
 				err = ioutil.WriteFile(filepath, b.Bytes(), 0644)
 //				err = ioutil.WriteFile(filepath, upload, 0644)
-				if err != nil {
-					http.Error(w, err.String(), http.StatusInternalServerError)
-					return
-				}
+				httpErr(err)
 				p.Title = filename + ": upload sucessfull"
 				if tag != "" {
 					// tag is set, hence it has already been found 
@@ -338,10 +342,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 			if tagValidator.MatchString(http.URLEscape(tag)) && 
 				picValidator.MatchString(filepath) {
 				err = mkThumb(filepath)
-				if err != nil {
-					http.Error(w, err.String(), http.StatusInternalServerError)
-					return 
-				}
+				httpErr(err)
 				m.Lock()
 				insert(filepath[rootdirlen+1:], tag)
 				m.Unlock()
@@ -357,6 +358,12 @@ func serveFile(w http.ResponseWriter, r *http.Request) {
 
 func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if e, ok := recover().(os.Error); ok {
+				http.Error(w, e.String(), http.StatusInternalServerError)
+				return
+			}
+		}()
 		title := r.URL.Path
 		w.Header().Set("Server", idstring)
 		fn(w, r, title)

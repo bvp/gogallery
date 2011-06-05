@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"crypto/sha1"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 //TODO: clean command to remove .thumbs or .resized
 //TODO: add last selected tag (and all tags) as a link?
 //TODO: cloud of tags? variable font size?
+//TODO: session? with cookies?
 //TODO: preload all the picsPaths for a given tag?
 //TODO: be nicer to file paths with spaces?
 
@@ -48,12 +50,14 @@ var (
 		Thumbsize: "200x300",
 		Normalsize: "800x600",
 		Tmpldir: "",
-		Norand: false}
+		Norand: false,
+		Password: ""}
 	maxWidth int
 	maxHeight int
 	m *sync.Mutex = new(sync.Mutex)
 	convertBin string
 	identifyBin string
+	needPass bool
 )
 
 var (
@@ -71,6 +75,8 @@ type conf struct {
 	Normalsize string
 	Tmpldir string
 	Norand bool
+//this password is supposed to be a sha1sum
+	Password string
 }
 
 type emailConf struct {
@@ -99,7 +105,17 @@ func readConf(confFile string) os.Error {
 	errchk(err)
 	maxHeight, err = strconv.Atoi(sizes[1])
 	errchk(err)
+	needPass = false
+	if config.Password != "" {
+		needPass = true
+	}
 	return nil
+}
+
+func passOk(pass string) bool {
+	sha := sha1.New()
+	sha.Write([]byte(pass))
+	return config.Password == fmt.Sprintf("%x", string(sha.Sum()))
 }
 
 func mkdir(dirpath string) os.Error {
