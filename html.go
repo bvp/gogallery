@@ -45,7 +45,8 @@ var (
 <div> 
 <center>
 <form action="` + picpattern + `{Title}" method="post"> 
-<input type="text" name="` + newtag + `"/> 
+Password: <input type="text" name="password"/> <br>
+Tag: <input type="text" name="` + newtag + `"/> 
 <input type="submit" value="Tag!"> 
 </form>
 <form action="` + picpattern + `{Title}" method="post"> 
