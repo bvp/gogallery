@@ -32,6 +32,7 @@ var (
 	tagValidator = regexp.MustCompile("^([a-zA-Z0-9]|_|-|%)+$")
 	picValidator = regexp.MustCompile(".*(jpg|JPG|jpeg|JPEG|png|gif|GIF)$")
 	templates = make(map[string]*template.Template)
+	
 )
 
 var (
@@ -60,12 +61,13 @@ func (p *lines) Write(line string) (n int, err os.Error) {
 
 type page struct {
 	Title	string
+	Protocol string
 	Host	string
 	Body	lines
 }
 
 func newPage(title string, body lines) *page {
-	p := page{title, *host, body}
+	p := page{title, protocol, *host, body}
 	return &p
 }
 
@@ -85,8 +87,9 @@ func tagPage(tag string) *page {
 	for i := 0; i<len(pics); i++ {
 		dir, file := path.Split(pics[i])
 		thumb := path.Join(dir, thumbsDir, file)
-		pics[i] = "<a href=\"http://" + *host + path.Join(picpattern, tag, pics[i]) +
-			"\"><img src=\"http://" + *host + "/" + thumb + "\"/></a>"
+		pics[i] = "<a href=\"" + protocol + "://" + *host + 
+			path.Join(picpattern, tag, pics[i]) +
+			"\"><img src=\"" + protocol + "://" + *host + "/" + thumb + "\"/></a>"
 	}
 	return newPage(tag, pics)
 }
@@ -202,7 +205,7 @@ func randomHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 //TODO: check that referer can never have a different *host part ?
 func nextHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	ok, err := regexp.MatchString(
-		"^http://"+*host+picpattern+".*$", (*r).Referer)
+		"^" + protocol + "://"+*host+picpattern+".*$", (*r).Referer)
 	httpErr(err)
 
 //TODO: maybe print the 1st one instead of a 404 ?
@@ -210,7 +213,7 @@ func nextHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 		http.NotFound(w, r)
 		return
 	}
-	prefix := len("http://" + *host)
+	prefix := len(protocol + "://" + *host)
 	picPath := (*r).Referer[prefix:]
 	if path.IsAbs(picPath) {
 		picPath = picPath[1:]
@@ -232,14 +235,14 @@ func nextHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 
 func prevHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	ok, err := regexp.MatchString(
-		"^http://"+*host+picpattern+".*$", (*r).Referer)
+		"^" + protocol + "://"+*host+picpattern+".*$", (*r).Referer)
 	httpErr(err)
 
 	if !ok {		
 		http.NotFound(w, r)
 		return
 	}
-	prefix := len("http://" + *host)
+	prefix := len(protocol + "://" + *host)
 	picPath := (*r).Referer[prefix:]
 	if path.IsAbs(picPath) {
 		picPath = picPath[1:]

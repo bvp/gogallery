@@ -21,7 +21,6 @@ import (
 	sqlite "gosqlite.googlecode.com/hg/sqlite"
 )
 
-//TODO: enable/disable public tags? auth?
 //TODO: clean command to remove .thumbs or .resized
 //TODO: add last selected tag (and all tags) as a link?
 //TODO: cloud of tags? variable font size?
@@ -51,13 +50,15 @@ var (
 		Normalsize: "800x600",
 		Tmpldir: "",
 		Norand: false,
-		Password: ""}
+		Password: "",
+		Tls: false}
 	maxWidth int
 	maxHeight int
 	m *sync.Mutex = new(sync.Mutex)
 	convertBin string
 	identifyBin string
 	needPass bool
+	protocol string = "http"
 )
 
 var (
@@ -77,6 +78,7 @@ type conf struct {
 	Norand bool
 //this password is supposed to be a sha1sum
 	Password string
+	Tls bool
 }
 
 type emailConf struct {
@@ -108,6 +110,9 @@ func readConf(confFile string) os.Error {
 	needPass = false
 	if config.Password != "" {
 		needPass = true
+	}
+	if config.Tls {
+		protocol = "https"
 	}
 	return nil
 }
@@ -405,5 +410,9 @@ func main() {
 	http.HandleFunc("/prev", makeHandler(prevHandler))
 	http.HandleFunc(uploadpattern, makeHandler(uploadHandler))
 	http.HandleFunc("/", http.HandlerFunc(serveFile))
-	http.ListenAndServe(*host, nil)
+	if config.Tls {
+		http.ListenAndServeTLS(*host, "cert.pem", "key.pem", nil)
+	} else {
+		http.ListenAndServe(*host, nil)
+	}
 }
