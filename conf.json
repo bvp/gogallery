@@ -10,6 +10,7 @@
 "Thumbsize": "200x300",
 "Normalsize": "800x600",
 "Tmpldir": "",
-"Norand": false
-"Password": "5ab88cdfad1c39da632cc9a4d7a3774b4e76408a"
+"Norand": false,
+"Password": "5ab88cdfad1c39da632cc9a4d7a3774b4e76408a",
+"Tls": false
 }

@@ -19,16 +19,16 @@ var (
 <table>
 <tr>
 <td>
-<a href="http://{Host}/prev"> prev </a>
+<a href="{Protocol}://{Host}/prev"> prev </a>
 </td>
 <td>
-<a href="http://{Host}` + tagspattern + `"> tags </a>
+<a href="{Protocol}://{Host}` + tagspattern + `"> tags </a>
 </td>
 <td>
-<a href="http://{Host}/random"> rand </a>
+<a href="{Protocol}://{Host}/random"> rand </a>
 </td>
 <td>
-<a href="http://{Host}/next"> next </a>
+<a href="{Protocol}://{Host}/next"> next </a>
 </td>
 </table>
 </center>
@@ -36,8 +36,8 @@ var (
 
 <div>
 <center>
-<a href="http://{Host}/random">
-<img src="http://{Host}/{.repeated section Body}{@}{.end}" alt="{Title}" />
+<a href="{Protocol}://{Host}/random">
+<img src="{Protocol}://{Host}/{.repeated section Body}{@}{.end}" alt="{Title}" />
 </a>
 </center>
 </div>
@@ -62,7 +62,7 @@ Tag: <input type="text" name="` + newtag + `"/>
 
 <div>
 <center>
-<a href="http://{Host}` + tagspattern + `"> tags </a>
+<a href="{Protocol}://{Host}` + tagspattern + `"> tags </a>
 </center>
 </div>
 
@@ -81,7 +81,7 @@ Tag: <input type="text" name="` + newtag + `"/>
 <div>
 <center>
 {.repeated section Body}
-<a href="http://{Host}` + tagpattern + `{@}">{@}</a>
+<a href="{Protocol}://{Host}` + tagpattern + `{@}">{@}</a>
 {.end}
 </center>
 </div>
@@ -125,10 +125,10 @@ func mkTemplates(dirpath string) os.Error {
 	}
 
 	if config.Norand {
-		randHtml := regexp.MustCompile(`<a href="http://{Host}/random">
+		randHtml := regexp.MustCompile(`<a href="{Protocol}://{Host}/random">
 `)
 		pic_html = randHtml.ReplaceAllString(pic_html,
-			`<a href="http://{Host}/{Title}">
+			`<a href="{Protocol}://{Host}/{Title}">
 `)
 	}
 
