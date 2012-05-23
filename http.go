@@ -2,68 +2,73 @@ package main
 
 import (
 	"bytes"
-	"path/filepath"
+	"errors"
+	"io"
+	"io/ioutil"
+	"math/rand"
+	"net/http"
+	"net/smtp"
+	"net/url"
 	"os"
 	"path"
-	"http"
-	"rand"
+	"path/filepath"
 	"regexp"
-	"template"
 	"strings"
-	"io/ioutil"
-	"smtp"
+	"text/template"
 	"time"
+
 //	"fmt"
 )
 
 const (
-	maxupload = 10e6
+	maxupload   = 10e6
 	largeupload = 2e6
-	fileinform = "upload"
-	taginform = "tag"
-	idstring = "gogallery"
-	newtag = "newtag"
-	fullsize = "fullsize"
+	fileinform  = "upload"
+	taginform   = "tag"
+	idstring    = "gogallery"
+	newtag      = "newtag"
+	fullsize    = "fullsize"
 )
 
 var (
-	fileServer = http.FileServer(rootdir, "")
-//TODO: since I had to accept % escapes for accented chars, it does not prevent spaces anymore. 
+	fileServer = http.FileServer(http.Dir(rootdir))
+	//TODO: since I had to accept % escapes for accented chars, it does not prevent spaces anymore. 
 	tagValidator = regexp.MustCompile("^([a-zA-Z0-9]|_|-|%)+$")
 	picValidator = regexp.MustCompile(".*(jpg|JPG|jpeg|JPEG|png|gif|GIF)$")
-	templates = make(map[string]*template.Template)
-	
+	//	templates    = make(map[string]*template.Template)
+	tmpls     = make(map[string]string)
+	templates *template.Template
 )
 
 var (
-    errPassRequired = os.NewError("Password required for this operation")
-	errLargeUpload = os.NewError("Upload too large")
+	errPassRequired = errors.New("Password required for this operation")
+	errLargeUpload  = errors.New("Upload too large")
 )
 
 type lines []string
 
-func (p *lines) Write(line string) (n int, err os.Error) {
+func (p *lines) Write(line string) (n int, err error) {
 	slice := *p
-    l := len(slice)
-    if l == cap(slice) {  // reallocate
-        // Allocate one more line
-        newSlice := make([]string, l+1, l+1)
-        // The copy function is predeclared and works for any slice type.
-        copy(newSlice, slice)
-        slice = newSlice
-    }
-	l++;
-    slice = slice[0:l]
+	l := len(slice)
+	if l == cap(slice) { // reallocate
+		// Allocate one more line
+		newSlice := make([]string, l+1, l+1)
+		// The copy function is predeclared and works for any slice type.
+		copy(newSlice, slice)
+		slice = newSlice
+	}
+	l++
+	slice = slice[0:l]
 	slice[l-1] = line
-    *p = slice
+	*p = slice
 	return len(line), nil
 }
 
 type page struct {
-	Title	string
+	Title    string
 	Protocol string
-	Host	string
-	Body	lines
+	Host     string
+	Body     lines
 }
 
 func newPage(title string, body lines) *page {
@@ -71,23 +76,29 @@ func newPage(title string, body lines) *page {
 	return &p
 }
 
-func httpErr(err os.Error) {
+func httpErr(err error) {
 	if err != nil {
 		panic(err)
 	}
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, p *page) {
-	err := templates[tmpl].Execute(w, p)
+	//	err := templates[tmpl].Execute(w, p)
+	t, ok := tmpls[tmpl]
+	if !ok {
+		httpErr(errors.New("no such template"))
+		return
+	}
+	err := templates.ExecuteTemplate(w, t, nil)
 	httpErr(err)
 }
 
 func tagPage(tag string) *page {
 	pics := getPics(tag)
-	for i := 0; i<len(pics); i++ {
+	for i := 0; i < len(pics); i++ {
 		dir, file := path.Split(pics[i])
 		thumb := path.Join(dir, thumbsDir, file)
-		pics[i] = "<a href=\"" + protocol + "://" + *host + 
+		pics[i] = "<a href=\"" + protocol + "://" + *host +
 			path.Join(picpattern, tag, pics[i]) +
 			"\"><img src=\"" + protocol + "://" + *host + "/" + thumb + "\"/></a>"
 	}
@@ -102,7 +113,7 @@ func tagsPage() *page {
 
 func tagHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	tag := urlpath[len(tagpattern):]
-	if !tagValidator.MatchString(http.URLEscape(tag)) {
+	if !tagValidator.MatchString(url.QueryEscape(tag)) {
 		http.NotFound(w, r)
 		return
 	}
@@ -114,9 +125,9 @@ func picHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	if path.IsAbs(urlpath) {
 		urlpath = urlpath[1:]
 	}
-	words := strings.Split(urlpath, filepath.SeparatorString, -1)
+	words := strings.Split(urlpath, string(filepath.Separator))
 	pic := path.Join(words[2:]...)
-//	pic := urlpath[len(picpattern):]
+	//	pic := urlpath[len(picpattern):]
 	err := r.ParseForm()
 	httpErr(err)
 
@@ -124,17 +135,17 @@ func picHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	inputTag := ""
 	inputPass := ""
 	for k, v := range (*r).Form {
-//		println(k)
-//		for _,y := range (v) {
-//			println(y)
-//		}
+		//		println(k)
+		//		for _,y := range (v) {
+		//			println(y)
+		//		}
 		switch k {
 		case newtag:
 			// only allow single alphanumeric word tag 
-			if tagValidator.MatchString(http.URLEscape(v[0])) {
+			if tagValidator.MatchString(url.QueryEscape(v[0])) {
 				inputTag = v[0]
 				if inputPass != "" {
-					if !needPass || passOk(inputPass)  {
+					if !needPass || passOk(inputPass) {
 						m.Lock()
 						insert(pic, inputTag)
 						m.Unlock()
@@ -155,26 +166,26 @@ func picHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 					err = errPassRequired
 					httpErr(err)
 				}
-			} 
-   		case fullsize:
+			}
+		case fullsize:
 			picPath := path.Join("/", pic)
 			http.Redirect(w, r, picPath, http.StatusFound)
 		}
 	}
-	
+
 	dir, file := path.Split(pic)
 	resized := path.Join(dir, resizedDir, file)
 	if needResize(pic) {
-			mkResized(pic)
+		mkResized(pic)
 	} else {
-//TODO: mv that to a global check ran once at the beginning, so that we don't recheck it everytime?
+		//TODO: mv that to a global check ran once at the beginning, so that we don't recheck it everytime?
 		err := os.MkdirAll(path.Join(dir, resizedDir), 0755)
 		httpErr(err)
 
-		err = os.Symlink(path.Join("..",file), resized)
-		if err != nil && err.(*os.LinkError).Error != os.EEXIST {
-//TODO: let it fail silently?
-			http.Error(w, err.String(), http.StatusInternalServerError)
+		err = os.Symlink(path.Join("..", file), resized)
+		if err != nil && !os.IsExist(err) {
+			//TODO: let it fail silently?
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
 	picSrc := lines{resized}
@@ -205,24 +216,24 @@ func randomHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 //TODO: check that referer can never have a different *host part ?
 func nextHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	ok, err := regexp.MatchString(
-		"^" + protocol + "://"+*host+picpattern+".*$", (*r).Referer)
+		"^"+protocol+"://"+*host+picpattern+".*$", (*r).Referer())
 	httpErr(err)
 
-//TODO: maybe print the 1st one instead of a 404 ?
-	if !ok {		
+	//TODO: maybe print the 1st one instead of a 404 ?
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 	prefix := len(protocol + "://" + *host)
-	picPath := (*r).Referer[prefix:]
+	picPath := (*r).Referer()[prefix:]
 	if path.IsAbs(picPath) {
 		picPath = picPath[1:]
 	}
-	words := strings.Split(picPath, filepath.SeparatorString, -1)
-	file, err := http.URLUnescape(path.Join(words[2:]...))
+	words := strings.Split(picPath, string(filepath.Separator))
+	file, err := url.QueryUnescape(path.Join(words[2:]...))
 	httpErr(err)
 
-	tag, err := http.URLUnescape(words[1])
+	tag, err := url.QueryUnescape(words[1])
 	httpErr(err)
 
 	s := getNext(file, tag)
@@ -235,23 +246,23 @@ func nextHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 
 func prevHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	ok, err := regexp.MatchString(
-		"^" + protocol + "://"+*host+picpattern+".*$", (*r).Referer)
+		"^"+protocol+"://"+*host+picpattern+".*$", (*r).Referer())
 	httpErr(err)
 
-	if !ok {		
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 	prefix := len(protocol + "://" + *host)
-	picPath := (*r).Referer[prefix:]
+	picPath := (*r).Referer()[prefix:]
 	if path.IsAbs(picPath) {
 		picPath = picPath[1:]
 	}
-	words := strings.Split(picPath, filepath.SeparatorString, -1)
-	file, err := http.URLUnescape(path.Join(words[2:]...))
+	words := strings.Split(picPath, string(filepath.Separator))
+	file, err := url.QueryUnescape(path.Join(words[2:]...))
 	httpErr(err)
 
-	tag, err := http.URLUnescape(words[1])
+	tag, err := url.QueryUnescape(words[1])
 	httpErr(err)
 
 	s := getPrev(file, tag)
@@ -270,7 +281,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 	reader, err := r.MultipartReader()
 
 	// do nothing if no form
-//TODO: should I not look for the uploadpattern action string?
+	//TODO: should I not look for the uploadpattern action string?
 	if err == nil {
 		for {
 			part, err := reader.NextPart()
@@ -283,18 +294,18 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 			// get the file
 			if partName == fileinform {
 				// get the filename 
-//TODO: use new native func to do that
+				//TODO: use new native func to do that
 				line := part.Header.Get("Content-Disposition")
 				filename := line[strings.Index(line, "filename="):]
-//TODO: that will fail if it's not at the end of the line, do better with a regex
-				filename = filename[10:len(filename)-1]
+				//TODO: that will fail if it's not at the end of the line, do better with a regex
+				filename = filename[10 : len(filename)-1]
 				// get the upload
-//TODO: sizing the buffer and then checking n indeed prevents filling mem and/or disk, but the thing will still be uploaded fully -> waste of b/w. => do better?
+				//TODO: sizing the buffer and then checking n indeed prevents filling mem and/or disk, but the thing will still be uploaded fully -> waste of b/w. => do better?
 				b := bytes.NewBuffer(make([]byte, 0, maxupload))
 				n, err := b.ReadFrom(part)
 				if err != nil {
-					if err != os.EOF {
-						http.Error(w, err.String(), http.StatusInternalServerError)
+					if err != io.EOF {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
 						return
 					}
 				}
@@ -307,16 +318,16 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 					httpErr(err)
 				}
 				// write file in dir with YYYY-MM-DD format
-				filedir := path.Join(config.Picsdir, time.UTC().Format("2006-01-02"))
-				err = mkdir(filedir)
+				filedir := path.Join(config.Picsdir, time.Now().UTC().Format("2006-01-02"))
+				err = os.MkdirAll(filedir, 0755)
 				httpErr(err)
 				// create thumbsdir while we're at it
-				err = mkdir(path.Join(filedir, thumbsDir))
+				err = os.MkdirAll(path.Join(filedir, thumbsDir), 0755)
 				httpErr(err)
 				// finally write the file
 				filepath = path.Join(filedir, filename)
 				err = ioutil.WriteFile(filepath, b.Bytes(), 0644)
-//				err = ioutil.WriteFile(filepath, upload, 0644)
+				//				err = ioutil.WriteFile(filepath, upload, 0644)
 				httpErr(err)
 				p.Title = filename + ": upload sucessfull"
 				if tag != "" {
@@ -329,20 +340,20 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 			if partName == taginform {
 				b := make([]byte, 128)
 				n, err := part.Read(b)
-//TODO: better err handling ?
+				//TODO: better err handling ?
 				if err == nil {
 					b = b[0:n]
 					tag = string(b)
 				}
 				if p.Title != "" {
 					// Title is set, hence upload has already been done
-					break;
+					break
 				}
 			}
 		}
 		// only insert tag if we have an upload of a pic and a tag for it			
 		if tag != "" && p.Title != "" {
-			if tagValidator.MatchString(http.URLEscape(tag)) && 
+			if tagValidator.MatchString(url.QueryEscape(tag)) &&
 				picValidator.MatchString(filepath) {
 				err = mkThumb(filepath)
 				httpErr(err)
@@ -356,14 +367,14 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, urlpath string) {
 }
 
 func serveFile(w http.ResponseWriter, r *http.Request) {
-	fileServer.ServeHTTP(w, r);
+	fileServer.ServeHTTP(w, r)
 }
 
 func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			if e, ok := recover().(os.Error); ok {
-				http.Error(w, e.String(), http.StatusInternalServerError)
+			if e, ok := recover().(error); ok {
+				http.Error(w, e.Error(), http.StatusInternalServerError)
 				return
 			}
 		}()

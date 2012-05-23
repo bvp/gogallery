@@ -75,7 +75,7 @@ Tag: <input type="text" name="` + newtag + `"/>
 </div>
 `
 
-	tags_html   = `
+	tags_html = `
 <h1><center>{Title}</center></h1>
 
 <div>
@@ -86,7 +86,7 @@ Tag: <input type="text" name="` + newtag + `"/>
 </center>
 </div>
 `
-//TODO: more suitable name for input submit below? probably no?
+	//TODO: more suitable name for input submit below? probably no?
 	upload_html = `
 
 <div> 
@@ -118,8 +118,8 @@ Tag <input type="text" name="tag" size="30"> <br>
 `
 )
 
-func mkTemplates(dirpath string) os.Error {
-	err := mkdir(dirpath)
+func mkTemplates(dirpath string) error {
+	err := os.MkdirAll(dirpath, 0755)
 	if err != nil {
 		return err
 	}

@@ -1,24 +1,26 @@
 package main
 
 import (
-	"exec"
+	"crypto/sha1"
+	"database/sql"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
-	"http"
 	"io/ioutil"
-	"json"
 	"log"
+	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"regexp"
-	"crypto/sha1"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
-	"template"
-	sqlite "gosqlite.googlecode.com/hg/sqlite"
+	"text/template"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 //TODO: clean command to remove .thumbs or .resized
@@ -29,66 +31,66 @@ import (
 //TODO: be nicer to file paths with spaces?
 
 const (
-	thumbsDir = ".thumbs"
-	resizedDir = ".resized"
-	picpattern = "/pic/"
-	tagpattern = "/tag/"
+	thumbsDir   = ".thumbs"
+	resizedDir  = ".resized"
+	picpattern  = "/pic/"
+	tagpattern  = "/tag/"
 	tagspattern = "/tags"
-// security through obscurity for now; just don't advertize your uploadpattern if you don't want others to upload to your server
+	// security through obscurity for now; just don't advertize your uploadpattern if you don't want others to upload to your server
 	uploadpattern = "/upload"
-	allPics = "all"
+	allPics       = "all"
 )
 
 var (
-	rootdir, _ = os.Getwd()
-	rootdirlen = len(rootdir)
-	config conf = conf{
-		Dbfile: "./gallery.db",
-		Initdb: false,
-		Picsdir: "./",
-		Thumbsize: "200x300",
+	rootdir, _      = os.Getwd()
+	rootdirlen      = len(rootdir)
+	config     conf = conf{
+		Dbfile:     "./gallery.db",
+		Initdb:     false,
+		Picsdir:    "./",
+		Thumbsize:  "200x300",
 		Normalsize: "800x600",
-		Tmpldir: "",
-		Norand: false,
-		Password: "",
-		Tls: false}
-	maxWidth int
-	maxHeight int
-	m *sync.Mutex = new(sync.Mutex)
-	convertBin string
+		Tmpldir:    "",
+		Norand:     false,
+		Password:   "",
+		Tls:        false}
+	maxWidth    int
+	maxHeight   int
+	m           *sync.Mutex = new(sync.Mutex)
+	convertBin  string
 	identifyBin string
-	needPass bool
-	protocol string = "http"
+	needPass    bool
+	protocol    string = "http"
 )
 
 var (
 	conffile = flag.String("conf", "", "json conf file to send email alerts")
-	host       = flag.String("host", "localhost:8080", "listening port and hostname that will appear in the urls")
-	help       = flag.Bool("h", false, "show this help")
+	host     = flag.String("host", "localhost:8080", "listening port and hostname that will appear in the urls")
+	help     = flag.Bool("h", false, "show this help")
 )
 
 type conf struct {
-	Email emailConf
-	Dbfile string
-	Initdb bool
-	Picsdir string
-	Thumbsize string
+	Email      emailConf
+	Dbfile     string
+	Initdb     bool
+	Picsdir    string
+	Thumbsize  string
 	Normalsize string
-	Tmpldir string
-	Norand bool
-//this password is supposed to be a sha1sum
+	Tmpldir    string
+	Norand     bool
+	//this password is supposed to be a sha1sum
 	Password string
-	Tls bool
+	Tls      bool
 }
 
 type emailConf struct {
-	Server string
-	From string
-	To []string
+	Server  string
+	From    string
+	To      []string
 	Message string
 }
 
-func readConf(confFile string) os.Error {
+func readConf(confFile string) error {
 	r, err := os.Open(confFile)
 	if err != nil {
 		log.Fatal(err)
@@ -99,9 +101,9 @@ func readConf(confFile string) os.Error {
 		log.Fatal(err)
 	}
 	r.Close()
-	sizes := strings.Split(config.Normalsize, "x", -1)
-	if len(sizes) != 2 { 
-		return os.NewError("Invalid Normalsize value \n")
+	sizes := strings.Split(config.Normalsize, "x")
+	if len(sizes) != 2 {
+		return errors.New("Invalid Normalsize value \n")
 	}
 	maxWidth, err = strconv.Atoi(sizes[0])
 	errchk(err)
@@ -120,20 +122,10 @@ func readConf(confFile string) os.Error {
 func passOk(pass string) bool {
 	sha := sha1.New()
 	sha.Write([]byte(pass))
-	return config.Password == fmt.Sprintf("%x", string(sha.Sum()))
+	return config.Password == fmt.Sprintf("%x", string(sha.Sum(nil)))
 }
 
-func mkdir(dirpath string) os.Error {
-	// used syscall because can't figure out how to check EEXIST with os
-	e := 0
-	e = syscall.Mkdir(dirpath, 0755)
-	if e != 0 && e != syscall.EEXIST {
-		return os.Errno(e)
-	}
-	return nil
-}
-
-func scanDir(dirpath string, tag string) os.Error {
+func scanDir(dirpath string, tag string) error {
 	if strings.Contains(dirpath, " ") {
 		log.Print("Skipping " + dirpath + " because spaces suck\n")
 		return nil
@@ -147,8 +139,8 @@ func scanDir(dirpath string, tag string) os.Error {
 		return err
 	}
 	currentDir.Close()
-	sort.SortStrings(names)
-	err = mkdir(path.Join(dirpath, thumbsDir))
+	sort.Strings(names)
+	err = os.MkdirAll(path.Join(dirpath, thumbsDir), 0755)
 	if err != nil {
 		return err
 	}
@@ -162,7 +154,7 @@ func scanDir(dirpath string, tag string) os.Error {
 		if err != nil {
 			return err
 		}
-		if fi.IsDirectory() && v != thumbsDir && v != resizedDir {
+		if fi.IsDir() && v != thumbsDir && v != resizedDir {
 			err = scanDir(childpath, tag)
 			if err != nil {
 				return err
@@ -185,21 +177,21 @@ func scanDir(dirpath string, tag string) os.Error {
 }
 
 func getBinsPaths() {
-	var err os.Error
+	var err error
 	convertBin, err = exec.LookPath("convert")
 	if err != nil {
-		newErr := os.NewError(err.String() + "\n it usually comes with imagemagick")
+		newErr := errors.New(err.Error() + "\n it usually comes with imagemagick")
 		log.Fatal(newErr)
 	}
 	identifyBin, err = exec.LookPath("identify")
 	if err != nil {
-		newErr := os.NewError(err.String() + "\n it usually comes with imagemagick")
+		newErr := errors.New(err.Error() + "\n it usually comes with imagemagick")
 		log.Fatal(newErr)
 	}
 }
 
 //TODO: set up a pool of goroutines to do the converts concurrently (probably not a win on a monocore though)
-func mkThumb(filepath string) os.Error {
+func mkThumb(filepath string) error {
 	dir, file := path.Split(filepath)
 	thumb := path.Join(dir, thumbsDir, file)
 	_, err := os.Stat(thumb)
@@ -212,7 +204,7 @@ func mkThumb(filepath string) os.Error {
 	if err != nil {
 		return err
 	}
-	_, err = os.Wait(p.Pid, os.WSTOPPED)
+	_, err = p.Wait()
 	if err != nil {
 		return err
 	}
@@ -233,7 +225,7 @@ func needResize(pic string) bool {
 		log.Fatal(err)
 	}
 	pw.Close()
-	_, err = os.Wait(p.Pid, os.WSTOPPED)
+	_, err = p.Wait()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -242,9 +234,9 @@ func needResize(pic string) bool {
 		log.Fatal(err)
 	}
 	pr.Close()
-	output := strings.Split(string(buf), " ", -1)
+	output := strings.Split(string(buf), " ")
 	// resolution should be the 3rd one of the output of identify
-	res := strings.Split(output[2], "x", -1)
+	res := strings.Split(output[2], "x")
 	w, err := strconv.Atoi(res[0])
 	if err != nil {
 		log.Fatal(err)
@@ -257,7 +249,7 @@ func needResize(pic string) bool {
 }
 
 // we can use convert -resize/-scale because, like -thumbnail, they conserve proportions 
-func mkResized(pic string) os.Error {
+func mkResized(pic string) error {
 	dir, file := path.Split(pic)
 	resized := path.Join(dir, resizedDir, file)
 	_, err := os.Stat(resized)
@@ -267,14 +259,14 @@ func mkResized(pic string) os.Error {
 	err = os.MkdirAll(path.Join(dir, resizedDir), 0755)
 	if err != nil {
 		return err
-	}	
+	}
 	args := []string{convertBin, pic, "-resize", config.Normalsize, resized}
 	fds := []*os.File{os.Stdin, os.Stdout, os.Stderr}
 	p, err := os.StartProcess(args[0], args, &os.ProcAttr{Files: fds})
 	if err != nil {
 		return err
 	}
-	_, err = os.Wait(p.Pid, os.WSTOPPED)
+	_, err = p.Wait()
 	if err != nil {
 		return err
 	}
@@ -312,9 +304,16 @@ func chktmpl() {
 	if !pathValidator.MatchString(config.Tmpldir) {
 		log.Fatal("tmpldir has to be a subdir of rootdir. (symlink ok)")
 	}
+
 	for _, tmpl := range []string{tagName, picName, tagsName, upName} {
-		templates[tmpl] = template.MustParseFile(path.Join(config.Tmpldir, tmpl+".html"), nil)
+		tmpls[tmpl] = path.Join(config.Tmpldir, tmpl+".html")
 	}
+
+	var templateFiles []string
+	for _, t := range tmpls {
+		templateFiles = append(templateFiles, t)
+	}
+	templates = template.Must(template.ParseFiles(templateFiles...))
 }
 
 //TODO: add some other potential risky chars
@@ -331,7 +330,7 @@ func badchar(filepath string) (bool, string) {
 	return false, ""
 }
 
-func errchk(err os.Error) {
+func errchk(err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -364,15 +363,15 @@ func main() {
 		if nargs < 2 {
 			usage()
 		}
-		var err os.Error
+		var err error
 		cmd := flag.Args()[0]
 		switch cmd {
 		case "tag":
 			if nargs < 3 {
 				usage()
 			}
-//why the smeg can't I use := here? 
-			db, err = sqlite.Open(config.Dbfile)
+			//why the smeg can't I use := here? 
+			db, err = sql.Open("sqlite3", config.Dbfile)
 			errchk(err)
 			config.Picsdir = flag.Args()[1]
 			chkpicsdir()
@@ -381,12 +380,12 @@ func main() {
 			log.Print("Scanning of " + config.Picsdir + " complete.")
 			db.Close()
 		case "deltag":
-			db, err = sqlite.Open(config.Dbfile)
+			db, err = sql.Open("sqlite3", config.Dbfile)
 			errchk(err)
 			delete(flag.Args()[1])
 			db.Close()
 		default:
-			usage()		
+			usage()
 		}
 		return
 	}
@@ -396,8 +395,8 @@ func main() {
 	if config.Initdb {
 		initDb()
 	} else {
-		var err os.Error
-		db, err = sqlite.Open(config.Dbfile)
+		var err error
+		db, err = sql.Open("sqlite3", config.Dbfile)
 		errchk(err)
 	}
 	setMaxId()
