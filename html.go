@@ -19,16 +19,16 @@ var (
 <table>
 <tr>
 <td>
-<a href="{Protocol}://{Host}/prev"> prev </a>
+<a href="{{.Protocol}}://{{.Host}}/prev"> prev </a>
 </td>
 <td>
-<a href="{Protocol}://{Host}` + tagspattern + `"> tags </a>
+<a href="{{.Protocol}}://{{.Host}}` + tagspattern + `"> tags </a>
 </td>
 <td>
-<a href="{Protocol}://{Host}/random"> rand </a>
+<a href="{{.Protocol}}://{{.Host}}/random"> rand </a>
 </td>
 <td>
-<a href="{Protocol}://{Host}/next"> next </a>
+<a href="{{.Protocol}}://{{.Host}}/next"> next </a>
 </td>
 </table>
 </center>
@@ -36,20 +36,20 @@ var (
 
 <div>
 <center>
-<a href="{Protocol}://{Host}/random">
-<img src="{Protocol}://{Host}/{.repeated section Body}{@}{.end}" alt="{Title}" />
+<a href="{{.Protocol}}://{{.Host}}/random">
+<img src="{{.Protocol}}://{{.Host}}/{{range $k,$v := .Body}}{{printf "%v" $v}}{{end}}" alt="{{.Title}}" />
 </a>
 </center>
 </div>
 
 <div> 
 <center>
-<form action="` + picpattern + `{Title}" method="post"> 
+<form action="` + picpattern + `{{.Title}}" method="post"> 
 Password: <input type="text" name="password"/> <br>
 Tag: <input type="text" name="` + newtag + `"/> 
 <input type="submit" value="Tag!"> 
 </form>
-<form action="` + picpattern + `{Title}" method="post"> 
+<form action="` + picpattern + `{{.Title}}" method="post"> 
 <input type="hidden" name="` + fullsize + `"/> 
 <input type="submit" value="Full size">
 </form>
@@ -58,31 +58,31 @@ Tag: <input type="text" name="` + newtag + `"/>
 `
 
 	tag_html = `
-<h1><center>{Title}</center></h1>
+<h1><center>{{.Title}}</center></h1>
 
 <div>
 <center>
-<a href="{Protocol}://{Host}` + tagspattern + `"> tags </a>
+<a href="{{.Protocol}}://{{.Host}}` + tagspattern + `"> tags </a>
 </center>
 </div>
 
 <div>
 <center>
-{.repeated section Body}
-{@}
-{.end}
+{{range $k,$v := .Body}}
+{{printf "%v" $v}}
+{{end}}
 </center>
 </div>
 `
 
 	tags_html = `
-<h1><center>{Title}</center></h1>
+<h1><center>{{.Title}}</center></h1>
 
 <div>
 <center>
-{.repeated section Body}
-<a href="{Protocol}://{Host}` + tagpattern + `{@}">{@}</a>
-{.end}
+{{range $k, $v := .Body}}
+<a href="{{.Protocol}}://{{.Host}}` + tagpattern + `{{printf "%v" $v}}">{{printf "%v" $v}}</a>
+{{end}}
 </center>
 </div>
 `
@@ -110,7 +110,7 @@ Tag <input type="text" name="tag" size="30"> <br>
 <div> 
 <center>
 <p>
-{Title}
+{{.Title}}
 </p>
 </center>
 </div>
@@ -125,10 +125,10 @@ func mkTemplates(dirpath string) error {
 	}
 
 	if config.Norand {
-		randHtml := regexp.MustCompile(`<a href="{Protocol}://{Host}/random">
+		randHtml := regexp.MustCompile(`<a href="{{.Protocol}}://{{.Host}}/random">
 `)
 		pic_html = randHtml.ReplaceAllString(pic_html,
-			`<a href="{Protocol}://{Host}/{Title}">
+			`<a href="{{.Protocol}}://{{.Host}}/{{.Title}}">
 `)
 	}
 
