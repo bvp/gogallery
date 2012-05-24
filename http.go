@@ -16,8 +16,6 @@ import (
 	"strings"
 	"text/template"
 	"time"
-
-//	"fmt"
 )
 
 const (
@@ -84,12 +82,12 @@ func httpErr(err error) {
 
 func renderTemplate(w http.ResponseWriter, tmpl string, p *page) {
 	//	err := templates[tmpl].Execute(w, p)
-	t, ok := tmpls[tmpl]
+	_, ok := tmpls[tmpl]
 	if !ok {
 		httpErr(errors.New("no such template"))
 		return
 	}
-	err := templates.ExecuteTemplate(w, t, nil)
+	err := templates.ExecuteTemplate(w, tmpl+".html", p)
 	httpErr(err)
 }
 
